@@ -1,0 +1,200 @@
+/* ===== SECTION HEADER — matches AnimeSection ===== */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: var(--space-8);
+  gap: var(--space-4);
+}
+
+.title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex: 1;
+}
+
+@media (max-width: 600px) {
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+  }
+
+  .title-wrapper {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* ===== NAV ARROWS ===== */
+.nav-arrows {
+  display: flex;
+  gap: 8px;
+  background: var(--bg-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.nav-button {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.nav-button:hover {
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+
+.nav-button:active {
+  transform: scale(0.9);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .nav-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ===== TIMEFRAME SELECT ===== */
+.timeSelect {
+  width: 120px;
+  height: 34px;
+  padding: 0 var(--space-3);
+  padding-right: 2rem;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23a1a1aa' stroke-width='2' viewBox='0 0 12 12'%3E%3Cpolyline points='3 5 6 8 9 5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  transition: all var(--transition-base);
+}
+
+.timeSelect:hover {
+  border-color: var(--border-secondary);
+  background-color: var(--bg-elevated);
+}
+
+.timeSelect:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ===== CAROUSEL ===== */
+.carouselContainer {
+  position: relative;
+  width: 100%;
+}
+
+.carousel {
+  overflow: hidden;
+  padding: 10px 0; /* Add padding to prevent hover transform clipping */
+  margin: -10px 0;
+}
+
+.carouselInner {
+  display: flex;
+  gap: 15px;
+}
+
+.carouselItem {
+  flex: 0 0 calc((100% - (6 * 15px)) / 7);
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+@media (max-width: 1200px) {
+  .carouselItem {
+    flex: 0 0 calc((100% - (5 * 15px)) / 6);
+  }
+}
+
+@media (max-width: 1024px) {
+  .carouselItem {
+    flex: 0 0 calc((100% - (4 * 15px)) / 5);
+  }
+}
+
+@media (max-width: 768px) {
+  .carouselItem {
+    flex: 0 0 calc((100% - (2 * 15px)) / 3);
+  }
+}
+
+@media (max-width: 480px) {
+  .carouselItem {
+    flex: 0 0 calc((100% - (2 * 10px)) / 3);
+    min-width: 100px;
+  }
+
+  .carouselInner {
+    gap: 10px;
+    align-items: flex-start;
+  }
+}
+
+/* ===== SKELETON ===== */
+.skeletonPoster,
+.skeletonText {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.skeletonPoster::after,
+.skeletonText::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.05) 20%,
+    rgba(255, 255, 255, 0.12) 60%,
+    rgba(255, 255, 255, 0)
+  );
+  animation: shimmer 1.8s infinite ease-in-out;
+}
+
+.skeletonPoster {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+}
+
+.skeletonText {
+  width: 80%;
+  height: 12px;
+  margin-top: var(--space-2);
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
