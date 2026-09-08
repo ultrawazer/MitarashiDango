@@ -22,11 +22,6 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 export function useThemedLogo(): string {
   const { activeTheme } = useTheme()
 
-  // Default theme uses original unmanipulated logo
-  if (activeTheme.id === 'dango') {
-    return '/logo.png'
-  }
-
   const cacheKey = `${activeTheme.id}-${activeTheme.colors.accentPrimary}-${activeTheme.colors.accentSecondary}`
 
   const [logoSrc, setLogoSrc] = useState<string>(() => {
@@ -34,11 +29,6 @@ export function useThemedLogo(): string {
   })
 
   useEffect(() => {
-    if (activeTheme.id === 'dango') {
-      setLogoSrc('/logo.png')
-      return
-    }
-
     const cached = logoCache.get(cacheKey)
     if (cached) {
       setLogoSrc(cached)
@@ -68,10 +58,25 @@ export function useThemedLogo(): string {
 
         const primaryRgb = hexToRgb(activeTheme.colors.accentPrimary)
         const secondaryRgb = hexToRgb(activeTheme.colors.accentSecondary)
+        const isDangoTheme = activeTheme.id === 'dango'
 
         for (let i = 0; i < data.length; i += 4) {
           const a = data[i + 3]
           if (a < 10) continue
+
+          const pixelIndex = i / 4
+          const x = pixelIndex % width
+          const y = Math.floor(pixelIndex / width)
+
+          // 1. Recolor 'mitarashi' text with the active theme's secondary accent color
+          // Strictly bounded to x in [165, 315] and y in [10, 36] so the middle white dango ball (x <= 86) is untouched.
+          // Directly fill RGB to ensure solid, crisp color without HSL saturation artifacts, keeping original alpha for antialiasing.
+          if (x >= 165 && x <= 315 && y >= 10 && y <= 36) {
+            data[i] = secondaryRgb.r
+            data[i + 1] = secondaryRgb.g
+            data[i + 2] = secondaryRgb.b
+            continue
+          }
 
           const r = data[i]
           const g = data[i + 1]
@@ -99,14 +104,14 @@ export function useThemedLogo(): string {
             h *= 60
           }
 
-          // 1. Preserve crisp white centers inside letters
-          if (l > 0.95 && s < 0.1) continue
+          // 2. Preserve crisp white centers inside 'd' and 'a' letters (y >= 40)
+          if (y >= 40 && l > 0.95 && s < 0.1) continue
 
-          // 2. Preserve wooden skewer stick (natural brown / tan wood)
+          // 3. Preserve wooden skewer stick (natural brown / tan wood)
           if (h >= 10 && h <= 45 && s < 0.6) continue
 
-          // 3. Recolor dango violet and lilac elements
-          if (h >= 240 && h <= 325) {
+          // 4. Recolor dango violet and lilac elements for non-default themes
+          if (!isDangoTheme && h >= 240 && h <= 325) {
             if (l < 0.74) {
               // Primary accent: 'dan' text and top-right dango ball
               const factor = Math.min(1.35, l / 0.67)
