@@ -412,19 +412,6 @@ export class LocalMediaController {
     }
   }
 
-  public refreshAnimeDb = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const result = await animeIdMapper.refreshDatabase(req.db)
-      res.json(result)
-    } catch (err) {
-      res.status(500).json({ success: false, error: (err as Error).message })
-    }
-  }
-
-  public getAnimeDbStatus = async (_req: Request, res: Response): Promise<void> => {
-    res.json(animeIdMapper.getMappingCount())
-  }
-
   public getCapabilities = async (_req: Request, res: Response): Promise<void> => {
     res.json(transcoderService.getCapabilities())
   }

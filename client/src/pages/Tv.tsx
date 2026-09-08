@@ -176,6 +176,22 @@ const Tv: React.FC = () => {
       return 'miami'
     }
   })
+  const [tvExtensions, setTvExtensions] = useState<{ id: string; name: string }[]>([])
+
+  useEffect(() => {
+    fetch('/api/extensions?type=tv')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: any[]) => {
+        const list = (data || [])
+          .filter((ext) => ext.enabled)
+          .map((ext) => ({
+            id: ext.id,
+            name: ext.metadata?.name || ext.name || ext.id,
+          }))
+        if (list.length > 0) setTvExtensions(list)
+      })
+      .catch(() => {})
+  }, [])
   const streamsRef = useRef<StreamSource[]>([])
   useEffect(() => {
     streamsRef.current = streams
@@ -391,6 +407,30 @@ const Tv: React.FC = () => {
         } else {
           setSelectedSubtitle(-1)
         }
+      } else {
+        const type = isMovie ? 'movie' : 'tv'
+        const baseParams = new URLSearchParams({
+          title: details.title || '',
+          year: details.year || '',
+          season: String(season),
+          episode: String(episode),
+          totalSeasons: String(details.number_of_seasons || 1),
+          imdbId: details.imdb_id || '',
+        })
+        const res = await fetch(`/api/tv/stream/${source}/${type}/${id}?${baseParams.toString()}`)
+        const data = await res.json()
+        setStreamLoading(false)
+        if (data.iframeUrl) {
+          setIframeUrl(data.iframeUrl)
+          return
+        }
+        if (data.sources && data.sources.length > 0) {
+          setStreams(data.sources)
+          if (data.audioTracks) setAudioTracks(data.audioTracks)
+          if (data.subtitles) setSubtitles(data.subtitles)
+          return
+        }
+        setStreamError(`No streams available from ${source}.`)
       }
     } catch {
       setStreamLoading(false)
@@ -895,18 +935,28 @@ const Tv: React.FC = () => {
               onChange={(e) => handleSourceSelect(e.target.value)}
               className={styles.select}
             >
-              <optgroup label="Direct HLS">
-                <option value="movybz">Movy.bz (4K HLS)</option>
-                <option value="vixsrc">VixSrc (HLS)</option>
-              </optgroup>
-              <optgroup label="WatchSeries Embeds">
-                <option value="embedmaster">EmbedMaster</option>
-                <option value="vidfast">VidFast</option>
-                <option value="videasy">VidEasy</option>
-              </optgroup>
-              <optgroup label="Other Embeds">
-                <option value="vidrock">VidRock</option>
-              </optgroup>
+              {tvExtensions.length > 0 ? (
+                tvExtensions.map((ext) => (
+                  <option key={ext.id} value={ext.id}>
+                    {ext.name}
+                  </option>
+                ))
+              ) : (
+                <>
+                  <optgroup label="Direct HLS">
+                    <option value="movybz">Movy.bz (4K HLS)</option>
+                    <option value="vixsrc">VixSrc (HLS)</option>
+                  </optgroup>
+                  <optgroup label="WatchSeries Embeds">
+                    <option value="embedmaster">EmbedMaster</option>
+                    <option value="vidfast">VidFast</option>
+                    <option value="videasy">VidEasy</option>
+                  </optgroup>
+                  <optgroup label="Other Embeds">
+                    <option value="vidrock">VidRock</option>
+                  </optgroup>
+                </>
+              )}
             </select>
           </label>
         </div>
@@ -921,18 +971,28 @@ const Tv: React.FC = () => {
               onChange={(e) => handleSourceSelect(e.target.value)}
               className={styles.select}
             >
-              <optgroup label="Direct HLS">
-                <option value="movybz">Movy.bz (4K HLS)</option>
-                <option value="vixsrc">VixSrc (HLS)</option>
-              </optgroup>
-              <optgroup label="WatchSeries Embeds">
-                <option value="embedmaster">EmbedMaster</option>
-                <option value="vidfast">VidFast</option>
-                <option value="videasy">VidEasy</option>
-              </optgroup>
-              <optgroup label="Other Embeds">
-                <option value="vidrock">VidRock</option>
-              </optgroup>
+              {tvExtensions.length > 0 ? (
+                tvExtensions.map((ext) => (
+                  <option key={ext.id} value={ext.id}>
+                    {ext.name}
+                  </option>
+                ))
+              ) : (
+                <>
+                  <optgroup label="Direct HLS">
+                    <option value="movybz">Movy.bz (4K HLS)</option>
+                    <option value="vixsrc">VixSrc (HLS)</option>
+                  </optgroup>
+                  <optgroup label="WatchSeries Embeds">
+                    <option value="embedmaster">EmbedMaster</option>
+                    <option value="vidfast">VidFast</option>
+                    <option value="videasy">VidEasy</option>
+                  </optgroup>
+                  <optgroup label="Other Embeds">
+                    <option value="vidrock">VidRock</option>
+                  </optgroup>
+                </>
+              )}
             </select>
           </label>
         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { FaTimes, FaSearch, FaStar, FaFilm, FaLayerGroup } from 'react-icons/fa'
@@ -123,7 +124,7 @@ export const GenreExplorerDrawer: React.FC<GenreExplorerDrawerProps> = ({ genre,
 
   if (!genre) return null
 
-  return (
+  return createPortal(
     <>
       <div className={styles.backdrop} onClick={onClose} />
       <div className={styles.drawer} role="dialog" aria-modal="true" aria-label={`${genre} Anime Explorer`}>
@@ -269,6 +270,7 @@ export const GenreExplorerDrawer: React.FC<GenreExplorerDrawerProps> = ({ genre,
             })}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   )
 }

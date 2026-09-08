@@ -31,7 +31,7 @@ function makeCacheMiddleware(
 
 export function createDataRouter(
   apiCache: NodeCache,
-  providers: { [key: string]: Provider }
+  providers: { [key: string]: Provider } | ((name: string) => Provider | null)
 ): Router {
   const router = Router()
   const controller = new DataController(providers)

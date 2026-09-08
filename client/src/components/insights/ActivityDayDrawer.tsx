@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { FaTimes, FaCalendarDay, FaStar, FaFilm } from 'react-icons/fa'
@@ -95,7 +96,7 @@ export const ActivityDayDrawer: React.FC<ActivityDayDrawerProps> = ({ date, onCl
     }
   })()
 
-  return (
+  return createPortal(
     <>
       <div className={styles.backdrop} onClick={onClose} />
       <div className={styles.drawer} role="dialog" aria-modal="true" aria-label="Activity Day Details">
@@ -209,6 +210,7 @@ export const ActivityDayDrawer: React.FC<ActivityDayDrawerProps> = ({ date, onCl
             })}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   )
 }

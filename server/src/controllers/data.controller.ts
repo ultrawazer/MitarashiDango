@@ -26,12 +26,20 @@ import { shokoClient } from '../lib/shoko.client'
 import logger from '../logger'
 
 export class DataController {
-  constructor(private providers: { [key: string]: Provider }) {}
+  private getProviderByName: (name: string) => Provider | null
+
+  constructor(providers: { [key: string]: Provider } | ((name: string) => Provider | null)) {
+    if (typeof providers === 'function') {
+      this.getProviderByName = providers
+    } else {
+      this.getProviderByName = (name: string) => providers[name] || null
+    }
+  }
 
   private getProvider(req: Request): Provider | null {
     const providerName = (req.query.provider as string)?.toLowerCase()
     if (!providerName) return null
-    return this.providers[providerName] || null
+    return this.getProviderByName(providerName)
   }
 
   getTrending = async (_req: Request, res: Response) => {
@@ -114,12 +122,13 @@ export class DataController {
       }
 
       // If in Local Only or Mixed mode, or if provider is specifically 'shoko'
+      const shokoProvider = this.getProviderByName('shoko')
       if (
-        this.providers['shoko'] &&
+        shokoProvider &&
         (mediaMode === 'local' || mediaMode === 'mixed' || providerName?.toLowerCase() === 'shoko')
       ) {
         try {
-          const localSources = await this.providers['shoko'].getStreamUrls(
+          const localSources = await shokoProvider.getStreamUrls(
             showId,
             episodeNumber,
             req.query.mode as 'sub' | 'dub'
@@ -191,7 +200,8 @@ export class DataController {
               // A title from local metadata is still enough to attempt provider resolution.
             }
           }
-          const resolved = await this.providers[providerKey]?.resolveShowId?.(
+          const targetProvider = this.getProviderByName(providerKey)
+          const resolved = await targetProvider?.resolveShowId?.(
             targetTitle,
             romaji,
             req.query.mode as 'sub' | 'dub' | undefined
@@ -204,7 +214,7 @@ export class DataController {
               '[Video] resolveShowId failed, attempting fallback provider search'
             )
             try {
-              const fallbackResults = await this.providers[providerKey]?.search?.({
+              const fallbackResults = await targetProvider?.search?.({
                 query: targetTitle,
               })
               const targets = [targetTitle, romaji].filter(
@@ -272,19 +282,21 @@ export class DataController {
 
     const showId = await getMigratedId(req.db, showIdRaw)
 
-    if (showId.startsWith('shoko:') && this.providers['shoko']) {
+    const shokoProviderInstance = this.getProviderByName('shoko')
+    if (showId.startsWith('shoko:') && shokoProviderInstance) {
       try {
-        const data = await this.providers['shoko'].getEpisodes(showId, req.query.mode as 'sub' | 'dub')
+        const data = await shokoProviderInstance.getEpisodes(showId, req.query.mode as 'sub' | 'dub')
         return res.json(data || { episodes: [] })
       } catch {
         return res.json({ episodes: [] })
       }
     }
 
+    const animepaheProvider = this.getProviderByName('animepahe')
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(showId)) {
       try {
-        if (this.providers['animepahe']) {
-          const data = await this.providers['animepahe'].getEpisodes(
+        if (animepaheProvider) {
+          const data = await animepaheProvider.getEpisodes(
             showId,
             req.query.mode as 'sub' | 'dub'
           )
@@ -305,11 +317,11 @@ export class DataController {
     // Check Shoko local availability
     let shokoDetails: any = null
     if (
-      this.providers['shoko'] &&
+      shokoProviderInstance &&
       (mediaMode === 'local' || mediaMode === 'mixed' || req.query.provider === 'shoko')
     ) {
       try {
-        shokoDetails = await this.providers['shoko'].getEpisodes(showId, req.query.mode as 'sub' | 'dub')
+        shokoDetails = await shokoProviderInstance.getEpisodes(showId, req.query.mode as 'sub' | 'dub')
       } catch {}
     }
 
@@ -354,7 +366,7 @@ export class DataController {
     }
 
     const providerName = (req.query.provider as string)?.toLowerCase()
-    const provider = providerName ? this.providers[providerName] : this.providers['anidb']
+    const provider = providerName ? this.getProviderByName(providerName) : this.getProviderByName('anidb')
     if (provider) {
       try {
         const data = await provider.getEpisodes(showId, req.query.mode as 'sub' | 'dub')
@@ -621,7 +633,7 @@ export class DataController {
 
       // anidb provides complete, normalized episode lists even when AniList
       // has no episodeCount (e.g. One Piece) or wrong data (e.g. Detective Conan)
-      const provider = this.providers['anidb']
+      const provider = this.getProviderByName('anidb')
       if (!provider) return []
 
       const searchResults = await provider.search({ query: title })

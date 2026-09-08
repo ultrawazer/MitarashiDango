@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import NodeCache from 'node-cache'
-import { JasmrProvider } from '../providers/jasmr.provider'
+import { AsmrExtension } from '../extensions/extension.types'
 import logger from '../logger'
 
 function makeCacheMiddleware(cache: NodeCache, keyFn: (req: Request) => string, ttl?: number) {
@@ -21,7 +21,10 @@ function makeCacheMiddleware(cache: NodeCache, keyFn: (req: Request) => string, 
   }
 }
 
-export function createAsmrRouter(apiCache: NodeCache, provider: JasmrProvider): Router {
+export function createAsmrRouter(
+  apiCache: NodeCache,
+  getAsmrProvider: (id?: string) => AsmrExtension | null
+): Router {
   const router = Router()
 
   router.get(
@@ -36,12 +39,23 @@ export function createAsmrRouter(apiCache: NodeCache, provider: JasmrProvider): 
     ),
     async (req, res) => {
       try {
-        const result = await provider.browse({
-          query: req.query.q as string,
-          page: parseInt(req.query.page as string) || 1,
-          sort: req.query.sort as string,
-          rating: req.query.rating as string,
-        })
+        const provider = getAsmrProvider(req.query.provider as string)
+        if (!provider) {
+          return res.json({ shows: [], hasNext: false })
+        }
+
+        const result = await provider.browse(
+          {
+            query: req.query.q as string,
+            page: parseInt(req.query.page as string) || 1,
+            sort: req.query.sort as string,
+            rating: req.query.rating as string,
+          },
+          {
+            jasmr_ua: req.headers['x-jasmr-ua'] as string,
+            jasmr_cookie: req.headers['x-jasmr-cookie'] as string,
+          }
+        )
         res.json(result)
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
@@ -58,11 +72,22 @@ export function createAsmrRouter(apiCache: NodeCache, provider: JasmrProvider): 
     makeCacheMiddleware(apiCache, (req) => `route-asmr-work-${req.params.rj}`, 1800),
     async (req, res) => {
       try {
+        const provider = getAsmrProvider(req.query.provider as string)
+        if (!provider) {
+          return res.json({ rjCode: req.params.rj, description: '', tracks: [], images: [], chapters: [] })
+        }
+
         const rjCode = String(req.params.rj).trim().toUpperCase()
-        const episodes = await provider.getEpisodes(rjCode)
-        const streams = await provider.getStreamUrls(rjCode, '1')
-        const images = await provider.getImages(rjCode)
-        const chapters = await provider.getChapters(rjCode)
+        const ctx = {
+          jasmr_ua: req.headers['x-jasmr-ua'] as string,
+          jasmr_cookie: req.headers['x-jasmr-cookie'] as string,
+        }
+
+        const episodes = await provider.getEpisodes(rjCode, ctx)
+        const streams = await provider.getStreamUrls(rjCode, '1', ctx)
+        const images = provider.getImages ? await provider.getImages(rjCode, ctx) : []
+        const chapters = provider.getChapters ? await provider.getChapters(rjCode, ctx) : []
+
         res.json({
           rjCode,
           description: episodes?.description || '',

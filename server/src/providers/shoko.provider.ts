@@ -1,5 +1,6 @@
 import {
   Provider,
+  ExtensionMetadata,
   SearchOptions,
   Show,
   EpisodeDetails,
@@ -16,6 +17,15 @@ const log = logger.child({ module: 'ShokoProvider' })
 
 export class ShokoProvider implements Provider {
   public name = 'shoko'
+  public readonly metadata: ExtensionMetadata = {
+    id: 'shoko',
+    name: 'Shoko (Local)',
+    version: '1.0.0',
+    type: 'anime',
+    lang: 'all',
+    mature: false,
+    description: 'Local and self-hosted anime library managed by Shoko Server',
+  }
 
   public async search(options: SearchOptions): Promise<Show[]> {
     try {

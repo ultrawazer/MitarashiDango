@@ -1,35 +1,16 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import styles from './Player.module.css'
 import type { VideoSource } from '../../pages/Player'
 
-type ProviderId =
-  | 'shoko'
-  | 'anilight'
-  | 'megaplay'
-  | 'animepahe'
-  | 'animeya'
-  | '123anime'
-  | 'wh'
-  | 'hn'
-  | 'ht'
-  | 'op'
-
-const PROVIDER_OPTIONS: { value: ProviderId; label: string; mature: boolean }[] = [
-  { value: 'shoko', label: 'Shoko (Local)', mature: false },
-  { value: 'anilight', label: 'Anilight', mature: false },
-  { value: 'megaplay', label: 'MegaPlay', mature: false },
-  { value: 'animepahe', label: 'AnimePahe', mature: false },
-  { value: 'animeya', label: 'Animeya', mature: false },
-  { value: '123anime', label: '123Anime', mature: false },
-  { value: 'wh', label: 'WH', mature: true },
-  { value: 'hn', label: 'HN', mature: true },
-  { value: 'ht', label: 'HT', mature: true },
-  { value: 'op', label: 'OP', mature: true },
-]
+interface ExtensionOption {
+  id: string
+  name: string
+  mature: boolean
+}
 
 interface ProviderSelectorProps {
-  selectedProvider: ProviderId
-  onProviderChange: (provider: ProviderId) => void
+  selectedProvider: string
+  onProviderChange: (provider: string) => void
   isAdult?: boolean
 }
 
@@ -38,10 +19,40 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
   onProviderChange,
   isAdult,
 }) => {
+  const [providers, setProviders] = useState<ExtensionOption[]>([
+    { id: 'shoko', name: 'Shoko (Local)', mature: false },
+  ])
+
+  useEffect(() => {
+    let isMounted = true
+    fetch('/api/extensions?type=anime')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: any[]) => {
+        if (!isMounted) return
+        const list: ExtensionOption[] = [
+          { id: 'shoko', name: 'Shoko (Local)', mature: false },
+        ]
+        for (const ext of data) {
+          if (ext.enabled && ext.id !== 'shoko') {
+            list.push({
+              id: ext.id,
+              name: ext.metadata?.name || ext.name || ext.id,
+              mature: ext.metadata?.mature ?? ext.mature ?? false,
+            })
+          }
+        }
+        setProviders(list)
+      })
+      .catch(() => {})
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   const visibleProviders =
     isAdult === undefined
-      ? PROVIDER_OPTIONS
-      : PROVIDER_OPTIONS.filter((option) => option.mature === isAdult)
+      ? providers
+      : providers.filter((option) => option.mature === isAdult)
 
   return (
     <div className={styles.providerSelectContainer}>
@@ -49,11 +60,11 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
       <select
         className={styles.providerSelect}
         value={selectedProvider}
-        onChange={(e) => onProviderChange(e.target.value as ProviderId)}
+        onChange={(e) => onProviderChange(e.target.value)}
       >
         {visibleProviders.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
+          <option key={option.id} value={option.id}>
+            {option.name}
           </option>
         ))}
       </select>

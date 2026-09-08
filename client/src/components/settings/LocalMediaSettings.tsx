@@ -39,12 +39,6 @@ const LocalMediaSettings: React.FC = () => {
     message?: string
   }>({ loading: false })
 
-  // Anime DB status
-  const [animeDbStatus, setAnimeDbStatus] = useState<{
-    totalMapped: number
-    isRefreshing: boolean
-  }>({ totalMapped: 0, isRefreshing: false })
-  const [refreshingDb, setRefreshingDb] = useState(false)
 
   useEffect(() => {
     if (mediaModeSetting !== undefined && mediaModeSetting !== null) {
@@ -74,19 +68,6 @@ const LocalMediaSettings: React.FC = () => {
     if (hwaccelSetting) setHwaccel(String(hwaccelSetting))
   }, [hwaccelSetting])
 
-  const fetchAnimeDbStatus = async () => {
-    try {
-      const res = await fetch('/api/shoko/anime-db-status')
-      if (res.ok) {
-        const data = await res.json()
-        setAnimeDbStatus(data)
-      }
-    } catch {}
-  }
-
-  useEffect(() => {
-    fetchAnimeDbStatus()
-  }, [])
 
   const handleMediaModeChange = (newMode: string) => {
     setMediaMode(newMode)
@@ -176,26 +157,6 @@ const LocalMediaSettings: React.FC = () => {
     }
   }
 
-  const handleRefreshAnimeDb = async () => {
-    setRefreshingDb(true)
-    toast.loading('Downloading anime cross-reference database...', { id: 'animedb' })
-    try {
-      const res = await fetch('/api/shoko/refresh-anime-db', { method: 'POST' })
-      const data = await res.json()
-      if (data.success) {
-        toast.success(`Anime database updated! ${data.count?.toLocaleString()} titles indexed`, {
-          id: 'animedb',
-        })
-        fetchAnimeDbStatus()
-      } else {
-        toast.error(data.error || 'Failed to update anime database', { id: 'animedb' })
-      }
-    } catch (e) {
-      toast.error('Failed to download anime database', { id: 'animedb' })
-    } finally {
-      setRefreshingDb(false)
-    }
-  }
 
   const handleHwaccelChange = (val: string) => {
     setHwaccel(val)
@@ -410,35 +371,6 @@ const LocalMediaSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* Anime Offline Database */}
-      <div className={styles.sectionCard}>
-        <h3 className={styles.title}>Anime Offline Database (AniDB ↔ AniList)</h3>
-        <p className={styles.subtitle}>
-          Manami Project cross-reference table that matches Shoko Server&apos;s AniDB library with AniList metadata.
-        </p>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <p style={{ margin: 0, fontSize: 'var(--font-size-base)', fontWeight: 600 }}>
-              {animeDbStatus.totalMapped > 0
-                ? `${animeDbStatus.totalMapped.toLocaleString()} series indexed`
-                : 'Not indexed yet'}
-            </p>
-            <p className={styles.hint}>
-              Automatic weekly background updates keep mappings up to date with new seasonal releases.
-            </p>
-          </div>
-
-          <Button
-            variant="secondary"
-            onClick={handleRefreshAnimeDb}
-            disabled={refreshingDb}
-            id="refresh-anime-db-btn"
-          >
-            {refreshingDb ? 'Updating...' : 'Refresh Database'}
-          </Button>
-        </div>
-      </div>
     </div>
   )
 }

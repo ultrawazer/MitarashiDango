@@ -46,6 +46,10 @@ Be part of the dango Discord Server Community where you can connect with fellow 
 ### Prerequisites
 
 - **Node.js**: Version 22.5.0 or higher ([Download here](https://nodejs.org/)).
+- **FFmpeg** *(Recommended for Local Media / Shoko)*: Enables fast on-the-fly remuxing and audio/subtitle transcoding for local library playback.
+  - **Windows**: `winget install Gyan.FFmpeg`
+  - **macOS**: `brew install ffmpeg`
+  - **Linux (Ubuntu/Debian)**: `sudo apt install ffmpeg`
 
 ### ⚡ Quick Install
 

@@ -5,17 +5,7 @@ export type Action =
   | { type: 'SET_MODE'; payload: 'sub' | 'dub' }
   | {
       type: 'SET_PROVIDER'
-      payload:
-        | 'shoko'
-        | 'animepahe'
-        | '123anime'
-        | 'animeya'
-        | 'megaplay'
-        | 'wh'
-        | 'hn'
-        | 'anilight'
-        | 'ht'
-        | 'op'
+      payload: string
     }
   | { type: 'SET_OVERRIDE_SOURCE'; payload: { source: VideoSource; link: VideoLink } | null }
 
@@ -23,28 +13,16 @@ const getPreferredMode = (): 'sub' | 'dub' => {
   return localStorage.getItem('preferredMode') === 'dub' ? 'dub' : 'sub'
 }
 
-const getPreferredProvider = (): PlayerState['selectedProvider'] => {
+const getPreferredProvider = (): string => {
   const provider = localStorage.getItem('preferredProvider')
-  const validProviders: string[] = [
-    'shoko',
-    'animepahe',
-    'megaplay',
-    'animeya',
-    '123anime',
-    'wh',
-    'hn',
-    'anilight',
-    'ht',
-    'op',
-  ]
-  if (provider && validProviders.includes(provider)) {
-    return provider as PlayerState['selectedProvider']
+  if (provider) {
+    return provider
   }
   const mediaMode = localStorage.getItem('mediaMode')
   if (mediaMode === 'local' || mediaMode === 'mixed') {
     return 'shoko'
   }
-  return 'animepahe'
+  return 'shoko'
 }
 
 export const createInitialState = (): PlayerState => ({

@@ -10,6 +10,7 @@ node_modules/
 server/.env
 server/google_tokens.json
 server/sync_manifest*.json
+server/data/
 
 # Android
 android-app/local.properties

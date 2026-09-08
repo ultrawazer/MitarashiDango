@@ -29,10 +29,6 @@ export function createLocalMediaRouter(): Router {
   router.get('/shoko/top-rated', localMediaController.getTopRated)
   router.get('/shoko/spotlight', localMediaController.getSpotlight)
 
-  // Anime offline database
-  router.post('/shoko/refresh-anime-db', localMediaController.refreshAnimeDb)
-  router.get('/shoko/anime-db-status', localMediaController.getAnimeDbStatus)
-
   // Hardware acceleration & transcoding info
   router.get('/local-media/capabilities', localMediaController.getCapabilities)
 

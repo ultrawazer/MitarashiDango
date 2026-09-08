@@ -11,17 +11,9 @@ import { DatabaseWrapper } from './db'
 import chokidar from 'chokidar'
 import logger from './logger'
 
-import { _123AnimeProvider as Anime123Provider } from './providers/123anime.provider'
-import { AnimeyaProvider } from './providers/animeya.provider'
-import { MegaPlayProvider } from './providers/megaplay.provider'
-import { AnimePaheProvider } from './providers/animepahe.provider'
-import { WhProvider } from './providers/wh.provider'
-import { HnProvider } from './providers/hn.provider'
-import { AnilightProvider } from './providers/anilight.provider'
-import { HtProvider } from './providers/ht.provider'
-import { JasmrProvider } from './providers/jasmr.provider'
-import { OpProvider } from './providers/op.provider'
 import { shokoProvider } from './providers/shoko.provider'
+import { extensionManager } from './extensions/extension-manager'
+import { createExtensionRouter } from './routes/extension.routes'
 import { shokoClient } from './lib/shoko.client'
 import { createLocalMediaRouter } from './routes/local-media.routes'
 import { animeIdMapper } from './lib/anime-id-mapper'
@@ -78,32 +70,8 @@ app.use((req, res, next) => {
   requestContext.run(store, next)
 })
 
+// Extension Manager provides dynamic providers (with Shoko built-in)
 const apiCache = new NodeCache({ stdTTL: 3600 })
-
-const _123AnimeProvider = new Anime123Provider(apiCache)
-const animeyaProvider = new AnimeyaProvider(apiCache)
-const megaPlayProvider = new MegaPlayProvider(apiCache)
-const animepaheProvider = new AnimePaheProvider(apiCache)
-const whProvider = new WhProvider(apiCache)
-const hnProvider = new HnProvider()
-const anilightProvider = new AnilightProvider(apiCache)
-const htProvider = new HtProvider(apiCache)
-const jasmrProvider = new JasmrProvider(apiCache)
-const opProvider = new OpProvider(apiCache)
-
-const providers = {
-  '123anime': _123AnimeProvider,
-  animeya: animeyaProvider,
-  megaplay: megaPlayProvider,
-  animepahe: animepaheProvider,
-  wh: whProvider,
-  hn: hnProvider,
-  anilight: anilightProvider,
-  ht: htProvider,
-  jasmr: jasmrProvider,
-  op: opProvider,
-  shoko: shokoProvider,
-}
 
 let db: DatabaseWrapper
 let isShuttingDown = false
@@ -185,10 +153,11 @@ app.use(
 
 const { router: watchlistRouter, stopDiscovery } = createWatchlistRouter(() => db)
 app.use('/api', watchlistRouter)
-app.use('/api', createDataRouter(apiCache, providers))
-app.use('/api', createAsmrRouter(apiCache, jasmrProvider))
+app.use('/api', createDataRouter(apiCache, (name) => extensionManager.getAnimeProvider(name)))
+app.use('/api', createAsmrRouter(apiCache, (id) => extensionManager.getAsmrProvider(id)))
 app.use('/api', createRadioRouter(apiCache))
-app.use('/api', createTvRouter(apiCache))
+app.use('/api', createTvRouter(apiCache, (id) => extensionManager.getTvProvider(id)))
+app.use('/api', createExtensionRouter(extensionManager))
 app.use('/api', createProxyRouter())
 app.use('/api', createInsightsRouter())
 app.use('/api', createTranslateRouter())
@@ -251,6 +220,8 @@ async function main() {
 
   db = await initializeDatabase(dbPath)
   logger.info(`Database initialized at ${dbPath}`)
+
+  await extensionManager.init()
 
   shokoClient.init(db)
   await animeIdMapper.init(db)

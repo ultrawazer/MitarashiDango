@@ -9,9 +9,10 @@ import WatchlistSettings from '../components/settings/WatchlistSettings'
 import RcloneSettings from '../components/settings/RcloneSettings'
 import SyncProviderSelector from '../components/settings/SyncProviderSelector'
 import DiscordTokenBookmarklet from '../components/settings/DiscordTokenBookmarklet'
-import { FaCog, FaCloud, FaDatabase, FaList, FaServer, FaChartPie } from 'react-icons/fa'
+import { FaCog, FaCloud, FaDatabase, FaList, FaServer, FaChartPie, FaPuzzlePiece } from 'react-icons/fa'
 import LocalMediaSettings from '../components/settings/LocalMediaSettings'
 import OfflineDbSettings from '../components/settings/OfflineDbSettings'
+import ExtensionsSettings from '../components/settings/ExtensionsSettings'
 import { useLowEndMode } from '../contexts/LowEndModeContext'
 import ToggleSwitch from '../components/common/ToggleSwitch'
 import packageJson from '../../../package.json'
@@ -24,14 +25,14 @@ import {
 import { useSetting, useUpdateSetting } from '../hooks/useSettings'
 import { Alert } from '../components/common/Alert'
 
-type SettingsTab = 'general' | 'sync' | 'watchlist' | 'insights' | 'database' | 'local-media'
+type SettingsTab = 'general' | 'sync' | 'watchlist' | 'insights' | 'database' | 'local-media' | 'extensions'
 
 const Settings: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const initialTab = searchParams.get('tab') as SettingsTab | null
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    initialTab && ['general', 'sync', 'watchlist', 'insights', 'database', 'local-media'].includes(initialTab)
+    initialTab && ['general', 'sync', 'watchlist', 'insights', 'database', 'local-media', 'extensions'].includes(initialTab)
       ? initialTab
       : 'general'
   )
@@ -598,6 +599,12 @@ const Settings: React.FC = () => {
             <LocalMediaSettings />
           </div>
         )
+      case 'extensions':
+        return (
+          <div className={styles.tabContent}>
+            <ExtensionsSettings />
+          </div>
+        )
       default:
         return null
     }
@@ -624,6 +631,13 @@ const Settings: React.FC = () => {
             id="tab-local-media-btn"
           >
             <FaServer /> <span>Local Media (Shoko)</span>
+          </button>
+          <button
+            className={`${styles.sidebarItem} ${activeTab === 'extensions' ? styles.active : ''}`}
+            onClick={() => selectTab('extensions')}
+            id="tab-extensions-btn"
+          >
+            <FaPuzzlePiece /> <span>Extensions</span>
           </button>
           <button
             className={`${styles.sidebarItem} ${activeTab === 'sync' ? styles.active : ''}`}
