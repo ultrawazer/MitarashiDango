@@ -6,6 +6,7 @@ import './styles/base.css'
 import { SidebarProvider } from './contexts/SidebarProvider'
 import { TitlePreferenceProvider } from './contexts/TitlePreferenceProvider'
 import { LowEndModeProvider } from './contexts/LowEndModeProvider'
+import { ThemeProvider } from './contexts/ThemeProvider'
 import { AnimePaheCookieProvider } from './contexts/AnimePaheCookieProvider'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -28,7 +29,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <SidebarProvider>
             <TitlePreferenceProvider>
               <LowEndModeProvider>
-                <App />
+                <ThemeProvider>
+                  <App />
+                </ThemeProvider>
               </LowEndModeProvider>
             </TitlePreferenceProvider>
           </SidebarProvider>

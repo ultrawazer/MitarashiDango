@@ -29,16 +29,24 @@ export const useSetting = (key: string) => {
   })
 }
 
-export const useUpdateSetting = () => {
+export interface UseUpdateSettingOptions {
+  silent?: boolean
+}
+
+export const useUpdateSetting = (options?: UseUpdateSettingOptions) => {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: updateSettings,
     onSuccess: () => {
-      toast.success('Setting updated!')
+      if (!options?.silent) {
+        toast.success('Setting updated!')
+      }
       queryClient.invalidateQueries({ queryKey: ['settings'] })
     },
     onError: (error) => {
-      toast.error(`Failed to update setting: ${error.message}`)
+      if (!options?.silent) {
+        toast.error(`Failed to update setting: ${error.message}`)
+      }
     },
   })
 }

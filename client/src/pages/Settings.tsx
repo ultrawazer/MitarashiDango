@@ -9,10 +9,11 @@ import WatchlistSettings from '../components/settings/WatchlistSettings'
 import RcloneSettings from '../components/settings/RcloneSettings'
 import SyncProviderSelector from '../components/settings/SyncProviderSelector'
 import DiscordTokenBookmarklet from '../components/settings/DiscordTokenBookmarklet'
-import { FaCog, FaCloud, FaDatabase, FaList, FaServer, FaChartPie, FaPuzzlePiece } from 'react-icons/fa'
+import { FaCog, FaCloud, FaDatabase, FaList, FaServer, FaChartPie, FaPuzzlePiece, FaPalette } from 'react-icons/fa'
 import LocalMediaSettings from '../components/settings/LocalMediaSettings'
 import OfflineDbSettings from '../components/settings/OfflineDbSettings'
 import ExtensionsSettings from '../components/settings/ExtensionsSettings'
+import ThemeSettings from '../components/settings/ThemeSettings'
 import { useLowEndMode } from '../contexts/LowEndModeContext'
 import ToggleSwitch from '../components/common/ToggleSwitch'
 import packageJson from '../../../package.json'
@@ -25,14 +26,14 @@ import {
 import { useSetting, useUpdateSetting } from '../hooks/useSettings'
 import { Alert } from '../components/common/Alert'
 
-type SettingsTab = 'general' | 'sync' | 'watchlist' | 'insights' | 'database' | 'local-media' | 'extensions'
+type SettingsTab = 'general' | 'themes' | 'sync' | 'watchlist' | 'insights' | 'database' | 'local-media' | 'extensions'
 
 const Settings: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const initialTab = searchParams.get('tab') as SettingsTab | null
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    initialTab && ['general', 'sync', 'watchlist', 'insights', 'database', 'local-media', 'extensions'].includes(initialTab)
+    initialTab && ['general', 'themes', 'sync', 'watchlist', 'insights', 'database', 'local-media', 'extensions'].includes(initialTab)
       ? initialTab
       : 'general'
   )
@@ -151,7 +152,10 @@ const Settings: React.FC = () => {
 
   React.useEffect(() => {
     const tab = searchParams.get('tab') as SettingsTab | null
-    if (tab && ['general', 'sync', 'watchlist', 'database'].includes(tab)) {
+    if (
+      tab &&
+      ['general', 'themes', 'sync', 'watchlist', 'insights', 'database', 'local-media', 'extensions'].includes(tab)
+    ) {
       setActiveTab(tab)
     }
   }, [searchParams])
@@ -523,6 +527,12 @@ const Settings: React.FC = () => {
             </div>
           </div>
         )
+      case 'themes':
+        return (
+          <div className={styles.tabContent}>
+            <ThemeSettings />
+          </div>
+        )
       case 'sync':
         return (
           <div className={styles.tabContent}>
@@ -624,6 +634,13 @@ const Settings: React.FC = () => {
             onClick={() => selectTab('general')}
           >
             <FaCog /> <span>General</span>
+          </button>
+          <button
+            className={`${styles.sidebarItem} ${activeTab === 'themes' ? styles.active : ''}`}
+            onClick={() => selectTab('themes')}
+            id="tab-themes-btn"
+          >
+            <FaPalette /> <span>Themes</span>
           </button>
           <button
             className={`${styles.sidebarItem} ${activeTab === 'local-media' ? styles.active : ''}`}
