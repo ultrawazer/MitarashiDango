@@ -202,6 +202,14 @@ export interface AsmrExtension extends IExtension {
   getChapters?(rjCode: string, context?: ExtensionContext): Promise<unknown[]>
 }
 
+export interface ExtensionRepository {
+  id: string
+  name: string
+  url: string
+  enabled: boolean
+  isDefault?: boolean
+}
+
 export interface InstalledExtensionRecord {
   id: string
   metadata: ExtensionMetadata
@@ -210,3 +218,4 @@ export interface InstalledExtensionRecord {
   pkg: string
   installedAt: string
 }
+

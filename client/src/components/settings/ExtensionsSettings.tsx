@@ -6,7 +6,10 @@ import {
   FaTrash,
   FaExternalLinkAlt,
   FaCheck,
-  FaExclamationCircle,
+  FaLayerGroup,
+  FaPlus,
+  FaTimes,
+  FaGlobe,
 } from 'react-icons/fa'
 import toast from 'react-hot-toast'
 import ToggleSwitch from '../common/ToggleSwitch'
@@ -44,16 +47,35 @@ interface AvailableExtension {
   currentVersion?: string
   hasUpdate?: boolean
   isBuiltin?: boolean
+  repoId?: string
+  repoName?: string
+  downloadUrl?: string
+}
+
+interface ExtensionRepository {
+  id: string
+  name: string
+  url: string
+  enabled: boolean
+  isDefault?: boolean
 }
 
 const ExtensionsSettings: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'installed' | 'available'>('installed')
   const [installed, setInstalled] = useState<InstalledExtension[]>([])
   const [available, setAvailable] = useState<AvailableExtension[]>([])
+  const [repos, setRepos] = useState<ExtensionRepository[]>([])
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
+  const [repoFilter, setRepoFilter] = useState<string>('all')
+
+  // Repositories modal state
+  const [isRepoModalOpen, setIsRepoModalOpen] = useState(false)
+  const [newRepoUrl, setNewRepoUrl] = useState('')
+  const [newRepoName, setNewRepoName] = useState('')
+  const [addingRepo, setAddingRepo] = useState(false)
 
   const fetchInstalled = useCallback(async () => {
     try {
@@ -77,11 +99,22 @@ const ExtensionsSettings: React.FC = () => {
     }
   }, [])
 
+  const fetchRepos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/extensions/repos')
+      if (!res.ok) throw new Error('Failed to fetch repositories')
+      const data = await res.json()
+      setRepos(data)
+    } catch (err) {
+      console.error(err)
+    }
+  }, [])
+
   const loadData = useCallback(async () => {
     setLoading(true)
-    await Promise.all([fetchInstalled(), fetchAvailable()])
+    await Promise.all([fetchInstalled(), fetchAvailable(), fetchRepos()])
     setLoading(false)
-  }, [fetchInstalled, fetchAvailable])
+  }, [fetchInstalled, fetchAvailable, fetchRepos])
 
   useEffect(() => {
     loadData()
@@ -111,12 +144,14 @@ const ExtensionsSettings: React.FC = () => {
     }
   }
 
-  const handleInstall = async (id: string, name: string) => {
+  const handleInstall = async (id: string, name: string, downloadUrl?: string) => {
     setBusy(id, true)
     const toastId = toast.loading(`Installing ${name}...`)
     try {
       const res = await fetch(`/api/extensions/install/${id}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ downloadUrl }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
@@ -154,17 +189,82 @@ const ExtensionsSettings: React.FC = () => {
 
   const handleReload = async () => {
     setLoading(true)
-    const toastId = toast.loading('Reloading extensions...')
+    const toastId = toast.loading('Reloading extensions & repositories...')
     try {
       const res = await fetch('/api/extensions/reload', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Reload failed')
       toast.success(`Reloaded ${data.count} extensions`, { id: toastId })
-      await Promise.all([fetchInstalled(), fetchAvailable()])
+      await Promise.all([fetchInstalled(), fetchAvailable(), fetchRepos()])
     } catch (err) {
       toast.error((err as Error).message || 'Reload failed', { id: toastId })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAddRepo = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newRepoUrl.trim()) {
+      toast.error('Please enter a repository URL')
+      return
+    }
+
+    setAddingRepo(true)
+    const toastId = toast.loading('Connecting to repository...')
+    try {
+      const res = await fetch('/api/extensions/repos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: newRepoUrl.trim(), name: newRepoName.trim() || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to add repository')
+      }
+
+      toast.success(`Repository "${data.repo.name}" added!`, { id: toastId })
+      setNewRepoUrl('')
+      setNewRepoName('')
+      await Promise.all([fetchRepos(), fetchAvailable()])
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to add repository', { id: toastId })
+    } finally {
+      setAddingRepo(false)
+    }
+  }
+
+  const handleRemoveRepo = async (repo: ExtensionRepository) => {
+    if (!window.confirm(`Are you sure you want to remove "${repo.name}"?`)) return
+
+    try {
+      const res = await fetch(`/api/extensions/repos/${repo.id}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to remove repository')
+      }
+      toast.success(`Removed repository "${repo.name}"`)
+      await Promise.all([fetchRepos(), fetchAvailable()])
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to remove repository')
+    }
+  }
+
+  const handleToggleRepo = async (repo: ExtensionRepository) => {
+    try {
+      const res = await fetch(`/api/extensions/repos/toggle/${repo.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !repo.enabled }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error('Toggle failed')
+      toast.success(`${repo.name} ${data.enabled ? 'enabled' : 'disabled'}`)
+      await Promise.all([fetchRepos(), fetchAvailable()])
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to toggle repository')
     }
   }
 
@@ -193,11 +293,13 @@ const ExtensionsSettings: React.FC = () => {
 
       if (!matchesSearch) return false
 
+      if (repoFilter !== 'all' && item.repoId !== repoFilter) return false
+
       if (filterType === 'all') return true
       if (filterType === 'mature') return item.isMature === true
       return item.type === filterType
     })
-  }, [available, searchQuery, filterType])
+  }, [available, searchQuery, filterType, repoFilter])
 
   const renderTypeBadge = (type: string) => {
     switch (type) {
@@ -228,9 +330,16 @@ const ExtensionsSettings: React.FC = () => {
           <div className={styles.buttonBar}>
             <button
               className={`${styles.actionBtn} ${styles.btnSecondary}`}
+              onClick={() => setIsRepoModalOpen(true)}
+              title="Manage extension repositories"
+            >
+              <FaLayerGroup /> Repositories ({repos.length})
+            </button>
+            <button
+              className={`${styles.actionBtn} ${styles.btnSecondary}`}
               onClick={handleReload}
               disabled={loading}
-              title="Reload extensions from disk"
+              title="Reload extensions from disk & repositories"
             >
               <FaSync className={loading ? 'fa-spin' : ''} /> Reload
             </button>
@@ -271,6 +380,20 @@ const ExtensionsSettings: React.FC = () => {
             <option value="asmr">ASMR</option>
             <option value="mature">Mature (18+)</option>
           </select>
+          {activeSubTab === 'available' && repos.length > 1 && (
+            <select
+              className={styles.filterSelect}
+              value={repoFilter}
+              onChange={(e) => setRepoFilter(e.target.value)}
+            >
+              <option value="all">All Repositories</option>
+              {repos.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -419,6 +542,11 @@ const ExtensionsSettings: React.FC = () => {
                         {ext.isBuiltin && (
                           <span className={`${styles.badge} ${styles.badgeBuiltin}`}>Built-in</span>
                         )}
+                        {ext.repoName && (
+                          <span className={`${styles.badge} ${styles.badgeRepo}`}>
+                            {ext.repoName}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -454,7 +582,7 @@ const ExtensionsSettings: React.FC = () => {
                       ext.hasUpdate ? (
                         <button
                           className={`${styles.actionBtn} ${styles.btnPrimary}`}
-                          onClick={() => handleInstall(ext.id, ext.name)}
+                          onClick={() => handleInstall(ext.id, ext.name, ext.downloadUrl)}
                           disabled={isBusy}
                         >
                           <FaSync className={isBusy ? 'fa-spin' : ''} /> Update
@@ -470,7 +598,7 @@ const ExtensionsSettings: React.FC = () => {
                     ) : (
                       <button
                         className={`${styles.actionBtn} ${styles.btnPrimary}`}
-                        onClick={() => handleInstall(ext.id, ext.name)}
+                        onClick={() => handleInstall(ext.id, ext.name, ext.downloadUrl)}
                         disabled={isBusy}
                       >
                         <FaDownload /> Install
@@ -481,6 +609,117 @@ const ExtensionsSettings: React.FC = () => {
               )
             })
           )}
+        </div>
+      )}
+
+      {/* Repositories Modal */}
+      {isRepoModalOpen && (
+        <div className={styles.modalOverlay} onClick={() => setIsRepoModalOpen(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h4 className={styles.modalTitle}>
+                <FaLayerGroup /> Extension Repositories
+              </h4>
+              <button
+                className={styles.modalClose}
+                onClick={() => setIsRepoModalOpen(false)}
+                title="Close"
+              >
+                <FaTimes />
+              </button>
+            </div>
+
+            <div className={styles.modalBody}>
+              <div className={styles.repoList}>
+                {repos.map((repo) => (
+                  <div key={repo.id} className={styles.repoItem}>
+                    <div className={styles.repoItemInfo}>
+                      <div className={styles.repoItemName}>
+                        <FaGlobe size={14} color="var(--accent, #6366f1)" />
+                        {repo.name}
+                        {repo.isDefault && (
+                          <span
+                            className={styles.badge}
+                            style={{
+                              background: 'rgba(99, 102, 241, 0.2)',
+                              color: '#818cf8',
+                              fontSize: '0.65rem',
+                            }}
+                          >
+                            Default
+                          </span>
+                        )}
+                      </div>
+                      <div className={styles.repoItemUrl} title={repo.url}>
+                        {repo.url}
+                      </div>
+                    </div>
+                    <div className={styles.repoItemActions}>
+                      <ToggleSwitch
+                        isChecked={repo.enabled}
+                        onChange={() => handleToggleRepo(repo)}
+                        id={`toggle-repo-${repo.id}`}
+                      />
+                      <button
+                        className={`${styles.actionBtn} ${styles.btnDanger}`}
+                        onClick={() => handleRemoveRepo(repo)}
+                        title="Remove repository"
+                        style={{ padding: '0.35rem 0.6rem' }}
+                      >
+                        <FaTrash size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {!repos.some((r) => r.id === 'official' || r.isDefault) && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className={`${styles.actionBtn} ${styles.btnSecondary}`}
+                    onClick={() => {
+                      setNewRepoUrl('https://github.com/ultrawazer/MitarashiDango_Extensions')
+                      setNewRepoName('Official Dango Extensions')
+                    }}
+                  >
+                    <FaPlus size={10} /> Restore Official Repository
+                  </button>
+                </div>
+              )}
+
+              {/* Add Repository Card */}
+              <form className={styles.addRepoCard} onSubmit={handleAddRepo}>
+                <h5 className={styles.addRepoTitle}>Add Custom Repository</h5>
+                <div className={styles.addRepoInputs}>
+                  <input
+                    type="text"
+                    className={styles.searchInput}
+                    placeholder="Repository URL (e.g. https://github.com/owner/repo or raw index.min.json)"
+                    value={newRepoUrl}
+                    onChange={(e) => setNewRepoUrl(e.target.value)}
+                    required
+                  />
+                  <div className={styles.addRepoRow}>
+                    <input
+                      type="text"
+                      className={styles.searchInput}
+                      placeholder="Display Name (optional)"
+                      value={newRepoName}
+                      onChange={(e) => setNewRepoName(e.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      className={`${styles.actionBtn} ${styles.btnPrimary}`}
+                      disabled={addingRepo}
+                    >
+                      <FaPlus /> {addingRepo ? 'Adding...' : 'Add'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
     </div>

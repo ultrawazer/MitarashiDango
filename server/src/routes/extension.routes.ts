@@ -31,11 +31,67 @@ export function createExtensionRouter(manager: ExtensionManager): Router {
     }
   })
 
+  // List configured repositories
+  router.get('/extensions/repos', (_req: Request, res: Response) => {
+    try {
+      res.json(manager.getRepositories())
+    } catch (err) {
+      logger.error({ err }, 'Failed to get repositories')
+      res.status(500).json({ error: (err as Error).message })
+    }
+  })
+
+  // Add a repository
+  router.post('/extensions/repos', async (req: Request, res: Response) => {
+    try {
+      const { url, name } = req.body || {}
+      const result = await manager.addRepository(url, name)
+      if (result.success) {
+        res.json(result)
+      } else {
+        res.status(400).json(result)
+      }
+    } catch (err) {
+      logger.error({ err }, 'Add repository failed')
+      res.status(500).json({ success: false, error: (err as Error).message })
+    }
+  })
+
+  // Delete a repository
+  router.delete('/extensions/repos/:id', (req: Request, res: Response) => {
+    try {
+      const id = req.params.id as string
+      const result = manager.removeRepository(id)
+      if (result.success) {
+        res.json(result)
+      } else {
+        res.status(400).json(result)
+      }
+    } catch (err) {
+      logger.error({ err, id: req.params.id }, 'Remove repository failed')
+      res.status(500).json({ success: false, error: (err as Error).message })
+    }
+  })
+
+  // Toggle a repository
+  router.post('/extensions/repos/toggle/:id', (req: Request, res: Response) => {
+    try {
+      const id = req.params.id as string
+      const enabled = typeof req.body?.enabled === 'boolean' ? req.body.enabled : undefined
+      const result = manager.toggleRepository(id, enabled)
+      res.json(result)
+    } catch (err) {
+      logger.error({ err, id: req.params.id }, 'Toggle repository failed')
+      res.status(500).json({ success: false, error: (err as Error).message })
+    }
+  })
+
   // Install or update extension
   router.post('/extensions/install/:id', async (req: Request, res: Response) => {
     try {
       const id = req.params.id as string
-      const result = await manager.install(id)
+      const downloadUrl = (req.body?.downloadUrl || req.query.downloadUrl) as string | undefined
+      const result = await manager.install(id, downloadUrl)
       if (result.success) {
         res.json({ success: true, id })
       } else {

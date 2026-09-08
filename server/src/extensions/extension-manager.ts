@@ -8,6 +8,7 @@ import {
   IExtension,
   InstalledExtensionRecord,
   ExtensionMetadata,
+  ExtensionRepository,
 } from './extension.types'
 import { shokoProvider } from '../providers/shoko.provider'
 
@@ -23,10 +24,20 @@ const REMOTE_REPO_RAW_BASE =
   process.env.EXTENSIONS_RAW_BASE ||
   'https://raw.githubusercontent.com/ultrawazer/MitarashiDango_Extensions/main/dist/'
 
+const DEFAULT_OFFICIAL_REPO: ExtensionRepository = {
+  id: 'official',
+  name: 'Official Dango Extensions',
+  url: REMOTE_REPO_INDEX_URL,
+  enabled: true,
+  isDefault: true,
+}
+
 export class ExtensionManager {
   private extensionsDir: string
   private installedJsonPath: string
+  private repositoriesJsonPath: string
   private installedRecords = new Map<string, InstalledExtensionRecord>()
+  private repositories = new Map<string, ExtensionRepository>()
 
   private animeExtensions = new Map<string, AnimeExtension>()
   private tvExtensions = new Map<string, TvExtension>()
@@ -36,6 +47,7 @@ export class ExtensionManager {
     const root = baseDir || path.resolve(__dirname, '..', '..')
     this.extensionsDir = path.join(root, 'data', 'extensions')
     this.installedJsonPath = path.join(this.extensionsDir, 'installed.json')
+    this.repositoriesJsonPath = path.join(this.extensionsDir, 'repositories.json')
   }
 
   public async init(): Promise<void> {
@@ -46,8 +58,9 @@ export class ExtensionManager {
     // 1. Always register built-in Shoko provider
     this.registerBuiltin(shokoProvider)
 
-    // 2. Load installed records registry
+    // 2. Load installed records registry & repositories
     this.loadRegistry()
+    this.loadRepositories()
 
     // 3. Auto-populate from local extensions repo if data/extensions is empty
     this.checkLocalDevAutoPopulate()
@@ -237,42 +250,205 @@ export class ExtensionManager {
     return out
   }
 
-  // --- Management APIs ---
+  // --- Repository Management APIs ---
+
+  private loadRepositories(): void {
+    if (fs.existsSync(this.repositoriesJsonPath)) {
+      try {
+        const raw = fs.readFileSync(this.repositoriesJsonPath, 'utf8')
+        const list = JSON.parse(raw) as ExtensionRepository[]
+        this.repositories.clear()
+        for (const repo of list) {
+          this.repositories.set(repo.id, repo)
+        }
+      } catch (err) {
+        log.error({ err }, 'Failed to parse repositories.json')
+      }
+    } else {
+      // First boot default
+      this.repositories.set(DEFAULT_OFFICIAL_REPO.id, { ...DEFAULT_OFFICIAL_REPO })
+      this.saveRepositories()
+    }
+  }
+
+  private saveRepositories(): void {
+    try {
+      const list = Array.from(this.repositories.values())
+      fs.writeFileSync(this.repositoriesJsonPath, JSON.stringify(list, null, 2), 'utf8')
+    } catch (err) {
+      log.error({ err }, 'Failed to save repositories.json')
+    }
+  }
+
+  public getRepositories(): ExtensionRepository[] {
+    return Array.from(this.repositories.values())
+  }
+
+  public async addRepository(
+    urlInput: string,
+    customName?: string
+  ): Promise<{ success: boolean; repo?: ExtensionRepository; error?: string }> {
+    let cleanUrl = (urlInput || '').trim()
+    if (!cleanUrl) return { success: false, error: 'Repository URL is required' }
+
+    // Normalize standard GitHub URLs (e.g., https://github.com/owner/repo -> raw index.min.json)
+    const urlWithoutQuery = cleanUrl.split('?')[0]
+    if (cleanUrl.startsWith('https://github.com/') && !cleanUrl.includes('raw.githubusercontent.com')) {
+      const parts = cleanUrl.replace('https://github.com/', '').split('/')
+      if (parts.length >= 2) {
+        const owner = parts[0]
+        const repo = parts[1]
+        cleanUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/dist/index.min.json`
+      }
+    } else if (!urlWithoutQuery.endsWith('.json')) {
+      cleanUrl = cleanUrl.replace(/\/+$/, '') + '/index.min.json'
+    }
+
+    // Prevent duplicate URLs
+    for (const existing of this.repositories.values()) {
+      if (existing.url.toLowerCase() === cleanUrl.toLowerCase()) {
+        return { success: false, error: 'Repository URL already added' }
+      }
+    }
+
+    // Verify manifest accessibility
+    try {
+      const res = await fetch(cleanUrl, { signal: AbortSignal.timeout(10000) })
+      if (!res.ok) {
+        return {
+          success: false,
+          error: `Repository returned HTTP ${res.status}. Ensure the repository is Public.`,
+        }
+      }
+      const data = await res.json()
+      if (!Array.isArray(data)) {
+        return { success: false, error: 'Invalid repository manifest (must contain an array of extensions)' }
+      }
+
+      const isOfficial = cleanUrl.toLowerCase() === DEFAULT_OFFICIAL_REPO.url.toLowerCase()
+      const id = isOfficial ? 'official' : 'repo_' + Math.random().toString(36).substring(2, 9)
+      let name = customName?.trim()
+      if (!name) {
+        if (isOfficial) {
+          name = DEFAULT_OFFICIAL_REPO.name
+        } else {
+          const match = cleanUrl.match(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)/)
+          if (match) {
+            name = `${match[1]}/${match[2]}`
+          } else {
+            name = `Repository ${this.repositories.size + 1}`
+          }
+        }
+      }
+
+      const newRepo: ExtensionRepository = {
+        id,
+        name,
+        url: cleanUrl,
+        enabled: true,
+        isDefault: isOfficial,
+      }
+
+      this.repositories.set(id, newRepo)
+      this.saveRepositories()
+      return { success: true, repo: newRepo }
+    } catch (err) {
+      return { success: false, error: `Failed to reach repository: ${(err as Error).message}` }
+    }
+  }
+
+  public removeRepository(id: string): { success: boolean; error?: string } {
+    const repo = this.repositories.get(id)
+    if (!repo) return { success: false, error: 'Repository not found' }
+
+    this.repositories.delete(id)
+    this.saveRepositories()
+    return { success: true }
+  }
+
+  public toggleRepository(id: string, enabled?: boolean): { success: boolean; enabled: boolean; error?: string } {
+    const repo = this.repositories.get(id)
+    if (!repo) return { success: false, enabled: false, error: 'Repository not found' }
+
+    const nextState = enabled !== undefined ? enabled : !repo.enabled
+    repo.enabled = nextState
+    this.saveRepositories()
+    return { success: true, enabled: nextState }
+  }
+
+  // --- Extension Management APIs ---
 
   public getInstalled(): InstalledExtensionRecord[] {
     return Array.from(this.installedRecords.values())
   }
 
   public async getAvailable(): Promise<
-    (ExtensionMetadata & { pkg: string; isInstalled: boolean; installedVersion?: string })[]
+    (ExtensionMetadata & {
+      pkg: string
+      installed: boolean
+      isInstalled: boolean
+      currentVersion?: string
+      installedVersion?: string
+      hasUpdate?: boolean
+      isBuiltin?: boolean
+      repoId?: string
+      repoName?: string
+      downloadUrl?: string
+    })[]
   > {
-    let available: (ExtensionMetadata & { pkg: string })[] = []
+    const availableMap = new Map<string, any>()
 
-    // 1. Try local dev repo index first if available
+    // 1. Local dev repo index (priority in local development)
     const localIndex = path.join(LOCAL_DEV_EXTENSIONS_DIR, 'index.min.json')
     if (fs.existsSync(localIndex)) {
       try {
         const raw = fs.readFileSync(localIndex, 'utf8')
-        available = JSON.parse(raw)
+        const items = JSON.parse(raw)
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            availableMap.set(item.id, {
+              ...item,
+              repoId: 'local-dev',
+              repoName: 'Local Dev Repo',
+              downloadUrl: path.join(LOCAL_DEV_EXTENSIONS_DIR, `${item.id}.js`),
+            })
+          }
+        }
       } catch (err) {
         log.warn({ err }, 'Failed to read local dev index.min.json')
       }
     }
 
-    // 2. Fallback to remote GitHub repository
-    if (available.length === 0) {
-      try {
-        const res = await fetch(REMOTE_REPO_INDEX_URL, { signal: AbortSignal.timeout(6000) })
-        if (res.ok) {
-          available = await res.json()
+    // 2. Enabled repositories in parallel
+    const enabledRepos = Array.from(this.repositories.values()).filter((r) => r.enabled)
+    await Promise.all(
+      enabledRepos.map(async (repo) => {
+        try {
+          const res = await fetch(repo.url, { signal: AbortSignal.timeout(8000) })
+          if (res.ok) {
+            const items = await res.json()
+            if (Array.isArray(items)) {
+              const baseUrl = repo.url.replace(/index\.min\.json(\?.*)?$/i, '')
+              for (const item of items) {
+                if (!availableMap.has(item.id)) {
+                  availableMap.set(item.id, {
+                    ...item,
+                    repoId: repo.id,
+                    repoName: repo.name,
+                    downloadUrl: `${baseUrl}${item.id}.js`,
+                  })
+                }
+              }
+            }
+          }
+        } catch (err) {
+          log.warn({ err, repo: repo.name, url: repo.url }, 'Failed to fetch extension repo index')
         }
-      } catch (err) {
-        log.warn({ err }, 'Failed to fetch remote extensions repo index')
-      }
-    }
+      })
+    )
 
-    // Map installed state
-    return available.map((item) => {
+    // Map installed states
+    return Array.from(availableMap.values()).map((item) => {
       const installed = this.installedRecords.get(item.id)
       const currentVer = installed?.metadata?.version
       const hasUpdate = !!installed && currentVer !== item.version
@@ -288,7 +464,7 @@ export class ExtensionManager {
     })
   }
 
-  public async install(id: string): Promise<{ success: boolean; error?: string }> {
+  public async install(id: string, customDownloadUrl?: string): Promise<{ success: boolean; error?: string }> {
     const cleanId = id.toLowerCase().trim()
     const targetFile = path.join(this.extensionsDir, `${cleanId}.js`)
 
@@ -297,18 +473,24 @@ export class ExtensionManager {
     if (fs.existsSync(localSrc)) {
       try {
         fs.copyFileSync(localSrc, targetFile)
-        this.loadExtensionModule(targetFile, cleanId)
-        return { success: true }
+        const ok = this.loadExtensionModule(targetFile, cleanId)
+        return { success: ok }
       } catch (err) {
         return { success: false, error: (err as Error).message }
       }
     }
 
-    // 2. Download from remote repository
+    // 2. Download from downloadUrl or query available repos
     try {
-      const url = `${REMOTE_REPO_RAW_BASE}${cleanId}.js`
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
-      if (!res.ok) return { success: false, error: `Remote returned HTTP ${res.status}` }
+      let downloadUrl = customDownloadUrl
+      if (!downloadUrl) {
+        const available = await this.getAvailable()
+        const found = available.find((a) => a.id === cleanId)
+        downloadUrl = found?.downloadUrl || `${REMOTE_REPO_RAW_BASE}${cleanId}.js`
+      }
+
+      const res = await fetch(downloadUrl, { signal: AbortSignal.timeout(15000) })
+      if (!res.ok) return { success: false, error: `Repository returned HTTP ${res.status}` }
       const content = await res.text()
       fs.writeFileSync(targetFile, content, 'utf8')
       const ok = this.loadExtensionModule(targetFile, cleanId)
