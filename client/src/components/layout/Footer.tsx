@@ -1,6 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router'
 import { FaGithub, FaHeart, FaChevronUp, FaDiscord } from 'react-icons/fa'
+import Logo from '../common/Logo'
 import styles from './Footer.module.css'
 import packageJson from '../../../package.json'
 
@@ -16,7 +17,7 @@ const Footer: React.FC = () => {
       <div className={styles.footerInner}>
         <div className={styles.brandSection}>
           <div className={styles.logoRow}>
-            <img src="/logo.png" className={styles.logoText} alt="dango" />
+            <Logo className={styles.logoText} />
           </div>
           <div className={styles.brandMeta}>
             <div className={styles.statusPill}>
