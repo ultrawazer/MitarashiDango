@@ -21,8 +21,12 @@ jobs:
           # Fetch all remote tags to ensure the local index knows about them
           git fetch --tags origin || true
 
-          # Find previous SHA of refs/tags/latest
-          PREV_SHA=$(git rev-parse refs/tags/latest 2>/dev/null || echo "")
+          # Check if refs/tags/latest exists and resolve SHA
+          if git rev-parse -q --verify refs/tags/latest >/dev/null 2>&1; then
+            PREV_SHA=$(git rev-parse -q --verify refs/tags/latest)
+          else
+            PREV_SHA=""
+          fi
           echo "Previous release SHA: $PREV_SHA"
 
           CURRENT_SHA=$(git rev-parse HEAD)
