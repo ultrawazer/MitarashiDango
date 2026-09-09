@@ -10,6 +10,7 @@ import fs from 'fs'
 import { DatabaseWrapper } from './db'
 import chokidar from 'chokidar'
 import logger from './logger'
+import { crossSiteProtectionMiddleware, isAllowedOrigin } from './utils/security.utils'
 
 import { shokoProvider } from './providers/shoko.provider'
 import { extensionManager } from './extensions/extension-manager'
@@ -28,6 +29,8 @@ import {
   getActiveProvider,
 } from './sync'
 import { createAuthRouter } from './routes/auth.routes'
+import { createLanAuthRouter } from './routes/lan-auth.routes'
+import { lanAuthMiddleware } from './app-auth'
 import { createWatchlistRouter } from './routes/watchlist.routes'
 import { createDataRouter } from './routes/data.routes'
 import { createAsmrRouter } from './routes/asmr.routes'
@@ -143,8 +146,19 @@ app.use(
   })
 )
 
-app.use(cors())
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      callback(null, isAllowedOrigin(origin))
+    },
+    credentials: true,
+  })
+)
+app.use(crossSiteProtectionMiddleware)
 app.use(express.json({ limit: '10mb' }))
+
+app.use('/api/auth', createLanAuthRouter())
+app.use(lanAuthMiddleware)
 
 app.use(
   '/api/auth',

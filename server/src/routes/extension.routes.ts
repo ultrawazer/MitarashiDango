@@ -86,6 +86,17 @@ export function createExtensionRouter(manager: ExtensionManager): Router {
     }
   })
 
+  // Restore default official repository
+  router.post('/extensions/repos/restore-default', (_req: Request, res: Response) => {
+    try {
+      const result = manager.restoreDefaultRepository()
+      res.json(result)
+    } catch (err) {
+      logger.error({ err }, 'Restore default repository failed')
+      res.status(500).json({ success: false, error: (err as Error).message })
+    }
+  })
+
   // Install or update extension
   router.post('/extensions/install/:id', async (req: Request, res: Response) => {
     try {

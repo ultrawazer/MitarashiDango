@@ -62,8 +62,8 @@ export class ExtensionManager {
     this.loadRegistry()
     this.loadRepositories()
 
-    // 3. Auto-populate from local extensions repo if data/extensions is empty
-    this.checkLocalDevAutoPopulate()
+    // 3. Sync from local extensions repo if present
+    this.syncLocalDevExtensions()
 
     // 4. Load all installed extension files from disk
     this.loadAllFromDisk()
@@ -125,24 +125,34 @@ export class ExtensionManager {
     }
   }
 
-  private checkLocalDevAutoPopulate(): void {
-    // If local dev repo exists and data/extensions has no installed .js files yet, copy them in
+  private syncLocalDevExtensions(): void {
     if (fs.existsSync(LOCAL_DEV_EXTENSIONS_DIR)) {
-      const existingJs = fs
-        .readdirSync(this.extensionsDir)
-        .filter((f) => f.endsWith('.js') && !f.includes('installed'))
-      if (existingJs.length === 0) {
-        log.info('Auto-populating extensions from local dev repo: ' + LOCAL_DEV_EXTENSIONS_DIR)
-        try {
-          const files = fs.readdirSync(LOCAL_DEV_EXTENSIONS_DIR).filter((f) => f.endsWith('.js'))
-          for (const f of files) {
-            const src = path.join(LOCAL_DEV_EXTENSIONS_DIR, f)
-            const dest = path.join(this.extensionsDir, f)
-            fs.copyFileSync(src, dest)
+      try {
+        const files = fs.readdirSync(LOCAL_DEV_EXTENSIONS_DIR).filter((f) => f.endsWith('.js'))
+        for (const f of files) {
+          const src = path.join(LOCAL_DEV_EXTENSIONS_DIR, f)
+          const dest = path.join(this.extensionsDir, f)
+          let shouldCopy = false
+          if (!fs.existsSync(dest)) {
+            shouldCopy = true
+          } else {
+            try {
+              const srcTime = fs.statSync(src).mtimeMs
+              const destTime = fs.statSync(dest).mtimeMs
+              if (srcTime > destTime) {
+                shouldCopy = true
+              }
+            } catch {
+              // ignore stat error
+            }
           }
-        } catch (err) {
-          log.warn({ err }, 'Could not auto-populate from local dev extensions')
+          if (shouldCopy) {
+            fs.copyFileSync(src, dest)
+            log.info({ file: f }, 'Synced extension bundle from local dev repository')
+          }
         }
+      } catch (err) {
+        log.warn({ err }, 'Could not sync from local dev extensions directory')
       }
     }
   }
@@ -291,23 +301,40 @@ export class ExtensionManager {
     let cleanUrl = (urlInput || '').trim()
     if (!cleanUrl) return { success: false, error: 'Repository URL is required' }
 
-    // Normalize standard GitHub URLs (e.g., https://github.com/owner/repo -> raw index.min.json)
-    const urlWithoutQuery = cleanUrl.split('?')[0]
-    if (cleanUrl.startsWith('https://github.com/') && !cleanUrl.includes('raw.githubusercontent.com')) {
+    // Normalize GitHub repository URLs
+    if (cleanUrl.startsWith('https://github.com/')) {
       const parts = cleanUrl.replace('https://github.com/', '').split('/')
       if (parts.length >= 2) {
         const owner = parts[0]
         const repo = parts[1]
         cleanUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/dist/index.min.json`
       }
-    } else if (!urlWithoutQuery.endsWith('.json')) {
+    } else if (cleanUrl.includes('raw.githubusercontent.com/')) {
+      const withoutQuery = cleanUrl.split('?')[0].replace(/\/+$/, '')
+      if (!withoutQuery.endsWith('.json')) {
+        if (withoutQuery.endsWith('/dist')) {
+          cleanUrl = `${withoutQuery}/index.min.json`
+        } else {
+          cleanUrl = `${withoutQuery}/dist/index.min.json`
+        }
+      }
+    } else if (!cleanUrl.split('?')[0].endsWith('.json')) {
       cleanUrl = cleanUrl.replace(/\/+$/, '') + '/index.min.json'
     }
 
-    // Prevent duplicate URLs
+    const isOfficial =
+      cleanUrl.toLowerCase() === DEFAULT_OFFICIAL_REPO.url.toLowerCase() ||
+      cleanUrl.toLowerCase().includes('mitarashidango_extensions')
+
+    // Prevent duplicate URLs or re-enable if already added
     for (const existing of this.repositories.values()) {
-      if (existing.url.toLowerCase() === cleanUrl.toLowerCase()) {
-        return { success: false, error: 'Repository URL already added' }
+      if (existing.url.toLowerCase() === cleanUrl.toLowerCase() || (isOfficial && existing.isDefault)) {
+        if (!existing.enabled) {
+          existing.enabled = true
+          this.saveRepositories()
+          return { success: true, repo: existing }
+        }
+        return { success: false, error: 'Repository is already added and enabled' }
       }
     }
 
@@ -325,7 +352,6 @@ export class ExtensionManager {
         return { success: false, error: 'Invalid repository manifest (must contain an array of extensions)' }
       }
 
-      const isOfficial = cleanUrl.toLowerCase() === DEFAULT_OFFICIAL_REPO.url.toLowerCase()
       const id = isOfficial ? 'official' : 'repo_' + Math.random().toString(36).substring(2, 9)
       let name = customName?.trim()
       if (!name) {
@@ -355,6 +381,16 @@ export class ExtensionManager {
     } catch (err) {
       return { success: false, error: `Failed to reach repository: ${(err as Error).message}` }
     }
+  }
+
+  public restoreDefaultRepository(): { success: boolean; repo: ExtensionRepository } {
+    const repo: ExtensionRepository = {
+      ...DEFAULT_OFFICIAL_REPO,
+      enabled: true,
+    }
+    this.repositories.set(DEFAULT_OFFICIAL_REPO.id, repo)
+    this.saveRepositories()
+    return { success: true, repo }
   }
 
   public removeRepository(id: string): { success: boolean; error?: string } {
@@ -399,23 +435,31 @@ export class ExtensionManager {
     const availableMap = new Map<string, any>()
 
     // 1. Local dev repo index (priority in local development)
-    const localIndex = path.join(LOCAL_DEV_EXTENSIONS_DIR, 'index.min.json')
-    if (fs.existsSync(localIndex)) {
-      try {
-        const raw = fs.readFileSync(localIndex, 'utf8')
-        const items = JSON.parse(raw)
-        if (Array.isArray(items)) {
-          for (const item of items) {
-            availableMap.set(item.id, {
-              ...item,
-              repoId: 'local-dev',
-              repoName: 'Local Dev Repo',
-              downloadUrl: path.join(LOCAL_DEV_EXTENSIONS_DIR, `${item.id}.js`),
-            })
+    // ONLY inject if the official/default repository exists AND is enabled
+    const officialRepo =
+      this.repositories.get('official') ||
+      Array.from(this.repositories.values()).find((r) => r.isDefault)
+    const isOfficialEnabled = officialRepo ? officialRepo.enabled : false
+
+    if (isOfficialEnabled && fs.existsSync(LOCAL_DEV_EXTENSIONS_DIR)) {
+      const localIndex = path.join(LOCAL_DEV_EXTENSIONS_DIR, 'index.min.json')
+      if (fs.existsSync(localIndex)) {
+        try {
+          const raw = fs.readFileSync(localIndex, 'utf8')
+          const items = JSON.parse(raw)
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              availableMap.set(item.id, {
+                ...item,
+                repoId: officialRepo ? officialRepo.id : 'official',
+                repoName: officialRepo ? officialRepo.name : 'Official Dango Extensions',
+                downloadUrl: path.join(LOCAL_DEV_EXTENSIONS_DIR, `${item.id}.js`),
+              })
+            }
           }
+        } catch (err) {
+          log.warn({ err }, 'Failed to read local dev index.min.json')
         }
-      } catch (err) {
-        log.warn({ err }, 'Failed to read local dev index.min.json')
       }
     }
 
@@ -423,6 +467,10 @@ export class ExtensionManager {
     const enabledRepos = Array.from(this.repositories.values()).filter((r) => r.enabled)
     await Promise.all(
       enabledRepos.map(async (repo) => {
+        // If we already loaded local dev items for this repo, skip fetching remote
+        if (repo.isDefault && isOfficialEnabled && fs.existsSync(LOCAL_DEV_EXTENSIONS_DIR)) {
+          return
+        }
         try {
           const res = await fetch(repo.url, { signal: AbortSignal.timeout(8000) })
           if (res.ok) {
@@ -550,6 +598,7 @@ export class ExtensionManager {
   }
 
   public reload(): void {
+    this.syncLocalDevExtensions()
     this.animeExtensions.clear()
     this.tvExtensions.clear()
     this.asmrExtensions.clear()

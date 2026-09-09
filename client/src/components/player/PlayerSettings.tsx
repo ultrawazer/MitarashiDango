@@ -22,9 +22,15 @@ interface PlayerSettingsProps {
   onSubtitleSettingsChange: (key: 'fontSize' | 'position', value: number) => void
   useNativeControls: boolean
   onNativeControlsToggle: (value: boolean) => void
+  anime4kEnabled?: boolean
+  onAnime4kToggle?: () => void
+  anime4kSupported?: boolean
+  anime4kProfile?: 'low' | 'balanced' | 'high' | 'denoise'
+  onAnime4kProfileChange?: (profile: 'low' | 'balanced' | 'high' | 'denoise') => void
+  anime4kInitializing?: boolean
 }
 
-type SettingsView = 'main' | 'quality' | 'subtitles' | 'subtitle-style' | 'audio'
+type SettingsView = 'main' | 'quality' | 'subtitles' | 'subtitle-style' | 'audio' | 'upscaler'
 
 const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTMLDivElement>) => {
   const {
@@ -43,6 +49,12 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
     onSubtitleSettingsChange,
     useNativeControls,
     onNativeControlsToggle,
+    anime4kEnabled = false,
+    onAnime4kToggle,
+    anime4kSupported = false,
+    anime4kProfile = 'balanced',
+    onAnime4kProfileChange,
+    anime4kInitializing = false,
   } = props
   const [view, setView] = useState<SettingsView>('main')
 
@@ -76,6 +88,16 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
       <button className={styles.menuItem} onClick={() => setView('subtitle-style')}>
         <span>Subtitle Style</span>
       </button>
+      {anime4kSupported && (
+        <button className={styles.menuItem} onClick={() => setView('upscaler')} id="player-upscaler-btn">
+          <span>Upscaler (Anime4K)</span>
+          <span className={styles.currentValue}>
+            {anime4kEnabled
+              ? `${anime4kProfile.charAt(0).toUpperCase() + anime4kProfile.slice(1)}${anime4kInitializing ? ' (loading)' : ''}`
+              : 'Off'}
+          </span>
+        </button>
+      )}
       <button
         className={`${styles.menuItem} ${useNativeControls ? styles.selected : ''}`}
         onClick={() => {
@@ -196,6 +218,48 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
     </div>
   )
 
+  const renderUpscaler = () => (
+    <div className={styles.menuContent}>
+      <button
+        className={`${styles.menuItem} ${!anime4kEnabled ? styles.selected : ''}`}
+        onClick={() => {
+          if (anime4kEnabled) onAnime4kToggle?.()
+        }}
+      >
+        <span>Off</span>
+        {!anime4kEnabled && <FaCheck size={12} />}
+      </button>
+      <button
+        className={`${styles.menuItem} ${anime4kEnabled ? styles.selected : ''}`}
+        onClick={() => {
+          if (!anime4kEnabled) onAnime4kToggle?.()
+        }}
+      >
+        <span>On {anime4kInitializing ? '(Initializing...)' : ''}</span>
+        {anime4kEnabled && <FaCheck size={12} />}
+      </button>
+      {anime4kEnabled && (
+        <div style={{ marginTop: '0.75rem', padding: '0 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Profile Preset</label>
+          <select
+            className={styles.presetSelect}
+            value={anime4kProfile}
+            onChange={(e) =>
+              onAnime4kProfileChange?.(
+                e.target.value as 'low' | 'balanced' | 'high' | 'denoise'
+              )
+            }
+          >
+            <option value="balanced">Balanced (Mode A)</option>
+            <option value="low">Fast / Low (Mode B)</option>
+            <option value="high">Quality / High (Mode AA)</option>
+            <option value="denoise">Denoise (Mode C)</option>
+          </select>
+        </div>
+      )}
+    </div>
+  )
+
   if (!isOpen) return null
 
   return (
@@ -219,6 +283,7 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
         {view === 'quality' && renderQuality()}
         {view === 'subtitles' && renderSubtitles()}
         {view === 'subtitle-style' && renderSubtitleStyle()}
+        {view === 'upscaler' && renderUpscaler()}
       </div>
     </div>
   )

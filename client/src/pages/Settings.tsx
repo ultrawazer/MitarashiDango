@@ -9,6 +9,7 @@ import WatchlistSettings from '../components/settings/WatchlistSettings'
 import RcloneSettings from '../components/settings/RcloneSettings'
 import SyncProviderSelector from '../components/settings/SyncProviderSelector'
 import DiscordTokenBookmarklet from '../components/settings/DiscordTokenBookmarklet'
+import LanAuthSettings from '../components/settings/LanAuthSettings'
 import { FaCog, FaCloud, FaDatabase, FaList, FaServer, FaChartPie, FaPuzzlePiece, FaPalette } from 'react-icons/fa'
 import LocalMediaSettings from '../components/settings/LocalMediaSettings'
 import OfflineDbSettings from '../components/settings/OfflineDbSettings'
@@ -263,6 +264,10 @@ const Settings: React.FC = () => {
                     id="virtual-keyboard-enabled"
                   />
                 </div>
+              </div>
+
+              <div style={{ marginTop: '2rem' }}>
+                <LanAuthSettings />
               </div>
 
               <div className={styles.settingItem} style={{ marginTop: '1.5rem' }}>

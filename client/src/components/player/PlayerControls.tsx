@@ -39,6 +39,12 @@ interface PlayerControlsProps {
   onTheaterModeToggle: () => void
   selectedAudioTrackIndex?: number
   onAudioTrackChange?: (index: number) => void
+  anime4kEnabled?: boolean
+  onAnime4kToggle?: () => void
+  anime4kSupported?: boolean
+  anime4kProfile?: 'low' | 'balanced' | 'high' | 'denoise'
+  onAnime4kProfileChange?: (profile: 'low' | 'balanced' | 'high' | 'denoise') => void
+  anime4kInitializing?: boolean
 }
 
 const PlayerControls: React.FC<PlayerControlsProps> = ({
@@ -59,6 +65,12 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   onTheaterModeToggle,
   selectedAudioTrackIndex,
   onAudioTrackChange,
+  anime4kEnabled,
+  onAnime4kToggle,
+  anime4kSupported,
+  anime4kProfile,
+  onAnime4kProfileChange,
+  anime4kInitializing,
 }) => {
   const { state, refs, actions } = player
   const { showSettings, showVolumeSlider } = state
@@ -525,6 +537,12 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
           }}
           useNativeControls={state.useNativeControls}
           onNativeControlsToggle={actions.setUseNativeControls}
+          anime4kEnabled={anime4kEnabled}
+          onAnime4kToggle={onAnime4kToggle}
+          anime4kSupported={anime4kSupported}
+          anime4kProfile={anime4kProfile}
+          onAnime4kProfileChange={onAnime4kProfileChange}
+          anime4kInitializing={anime4kInitializing}
         />
       </Suspense>
     </div>

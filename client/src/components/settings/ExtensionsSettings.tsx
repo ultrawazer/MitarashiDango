@@ -77,6 +77,10 @@ const ExtensionsSettings: React.FC = () => {
   const [newRepoName, setNewRepoName] = useState('')
   const [addingRepo, setAddingRepo] = useState(false)
 
+  // In-app confirmation states (replaces native window.confirm)
+  const [confirmDeleteRepoId, setConfirmDeleteRepoId] = useState<string | null>(null)
+  const [confirmUninstallId, setConfirmUninstallId] = useState<string | null>(null)
+
   const fetchInstalled = useCallback(async () => {
     try {
       const res = await fetch('/api/extensions')
@@ -167,7 +171,7 @@ const ExtensionsSettings: React.FC = () => {
   }
 
   const handleUninstall = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to uninstall "${name}"?`)) return
+    setConfirmUninstallId(null)
     setBusy(id, true)
     const toastId = toast.loading(`Uninstalling ${name}...`)
     try {
@@ -235,8 +239,8 @@ const ExtensionsSettings: React.FC = () => {
   }
 
   const handleRemoveRepo = async (repo: ExtensionRepository) => {
-    if (!window.confirm(`Are you sure you want to remove "${repo.name}"?`)) return
-
+    setConfirmDeleteRepoId(null)
+    const toastId = toast.loading(`Removing repository "${repo.name}"...`)
     try {
       const res = await fetch(`/api/extensions/repos/${repo.id}`, {
         method: 'DELETE',
@@ -245,10 +249,25 @@ const ExtensionsSettings: React.FC = () => {
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to remove repository')
       }
-      toast.success(`Removed repository "${repo.name}"`)
+      toast.success(`Removed repository "${repo.name}"`, { id: toastId })
       await Promise.all([fetchRepos(), fetchAvailable()])
     } catch (err) {
-      toast.error((err as Error).message || 'Failed to remove repository')
+      toast.error((err as Error).message || 'Failed to remove repository', { id: toastId })
+    }
+  }
+
+  const handleRestoreDefaultRepo = async () => {
+    const toastId = toast.loading('Restoring official repository...')
+    try {
+      const res = await fetch('/api/extensions/repos/restore-default', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to restore official repository')
+      }
+      toast.success('Official repository restored!', { id: toastId })
+      await Promise.all([fetchRepos(), fetchAvailable()])
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to restore repository', { id: toastId })
     }
   }
 
@@ -501,14 +520,35 @@ const ExtensionsSettings: React.FC = () => {
                         </button>
                       )}
                       {!ext.isBuiltin && (
-                        <button
-                          className={`${styles.actionBtn} ${styles.btnDanger}`}
-                          onClick={() => handleUninstall(meta.id, meta.name)}
-                          disabled={isBusy}
-                          title="Uninstall extension"
-                        >
-                          <FaTrash />
-                        </button>
+                        confirmUninstallId === meta.id ? (
+                          <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                            <button
+                              className={`${styles.actionBtn} ${styles.btnDanger}`}
+                              onClick={() => handleUninstall(meta.id, meta.name)}
+                              disabled={isBusy}
+                              style={{ padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
+                            >
+                              Uninstall?
+                            </button>
+                            <button
+                              className={`${styles.actionBtn} ${styles.btnSecondary}`}
+                              onClick={() => setConfirmUninstallId(null)}
+                              disabled={isBusy}
+                              style={{ padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
+                            >
+                              <FaTimes size={10} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            className={`${styles.actionBtn} ${styles.btnDanger}`}
+                            onClick={() => setConfirmUninstallId(meta.id)}
+                            disabled={isBusy}
+                            title="Uninstall extension"
+                          >
+                            <FaTrash />
+                          </button>
+                        )
                       )}
                     </div>
                   </div>
@@ -660,28 +700,46 @@ const ExtensionsSettings: React.FC = () => {
                         onChange={() => handleToggleRepo(repo)}
                         id={`toggle-repo-${repo.id}`}
                       />
-                      <button
-                        className={`${styles.actionBtn} ${styles.btnDanger}`}
-                        onClick={() => handleRemoveRepo(repo)}
-                        title="Remove repository"
-                        style={{ padding: '0.35rem 0.6rem' }}
-                      >
-                        <FaTrash size={12} />
-                      </button>
+                      {confirmDeleteRepoId === repo.id ? (
+                        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                          <button
+                            className={`${styles.actionBtn} ${styles.btnDanger}`}
+                            onClick={() => handleRemoveRepo(repo)}
+                            title="Confirm delete"
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
+                          >
+                            Delete?
+                          </button>
+                          <button
+                            className={`${styles.actionBtn} ${styles.btnSecondary}`}
+                            onClick={() => setConfirmDeleteRepoId(null)}
+                            title="Cancel"
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
+                          >
+                            <FaTimes size={10} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className={`${styles.actionBtn} ${styles.btnDanger}`}
+                          onClick={() => setConfirmDeleteRepoId(repo.id)}
+                          title="Remove repository"
+                          style={{ padding: '0.35rem 0.6rem' }}
+                        >
+                          <FaTrash size={12} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
 
               {!repos.some((r) => r.id === 'official' || r.isDefault) && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                   <button
                     type="button"
                     className={`${styles.actionBtn} ${styles.btnSecondary}`}
-                    onClick={() => {
-                      setNewRepoUrl('https://github.com/ultrawazer/MitarashiDango_Extensions')
-                      setNewRepoName('Official Dango Extensions')
-                    }}
+                    onClick={handleRestoreDefaultRepo}
                   >
                     <FaPlus size={10} /> Restore Official Repository
                   </button>

@@ -108,6 +108,7 @@ dotenv.config({ path: ENV_PATH, override: true })
 
 const IS_DEV = process.argv.includes('--dev')
 const PORT = parseInt(process.env.PORT || '3000', 10)
+const HOST = process.env.HOST || '0.0.0.0'
 const GOOGLE_REDIRECT_URI = IS_DEV
   ? 'http://localhost:5173/api/auth/google/callback'
   : `http://localhost:${PORT}/api/auth/google/callback`
@@ -142,6 +143,8 @@ export const CONFIG = {
   RCLONE_SYNC_FILENAME: IS_DEV ? 'sync.dev.json' : 'sync.json',
   IS_DEV,
   PORT,
+  HOST,
+  APP_PASSWORD_HASH: process.env.APP_PASSWORD_HASH || '',
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI: GOOGLE_REDIRECT_URI,

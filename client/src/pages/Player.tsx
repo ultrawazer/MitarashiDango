@@ -32,6 +32,7 @@ import EpisodeDrawer from '../components/player/EpisodeDrawer'
 import SourceSelector from '../components/player/SourceSelector'
 import { ProviderSelector } from '../components/player/SourceSelector'
 import useVideoPlayer from '../hooks/useVideoPlayer'
+import useAnime4K, { type Profile as Anime4KProfile } from '../hooks/useAnime4K'
 import { usePlayerData } from '../hooks/usePlayerData'
 import { useQueue, useRemoveFromQueue, useClearQueue, useReorderQueue } from '../hooks/useAnimeData'
 import type { QueueItem } from '../hooks/useAnimeData'
@@ -118,6 +119,29 @@ const Player: React.FC = () => {
   const seekToTimeRef = useRef<number>(0)
   const resumeTimeRef = useRef(state.resumeTime)
   const showResumeModalRef = useRef(state.showResumeModal)
+
+  const upscalerCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const subtitleOverlayRef = useRef<HTMLDivElement | null>(null)
+
+  const [anime4kProfile, setAnime4kProfile] = useState<Anime4KProfile>(() => {
+    return (localStorage.getItem('anime4kProfile') as Anime4KProfile) || 'balanced'
+  })
+
+  const {
+    isWebGPUSupported: isAnime4kSupported,
+    isEnabled: isAnime4kEnabled,
+    isInitializing: isAnime4kInitializing,
+    toggle: toggleAnime4k,
+  } = useAnime4K({
+    videoRef: refs.videoRef,
+    canvasRef: upscalerCanvasRef,
+    profile: anime4kProfile,
+  })
+
+  const handleAnime4kProfileChange = useCallback((profile: Anime4KProfile) => {
+    setAnime4kProfile(profile)
+    localStorage.setItem('anime4kProfile', profile)
+  }, [])
 
   const handleAudioTrackChange = useCallback(
     (index: number) => {
@@ -940,18 +964,49 @@ const Player: React.FC = () => {
       return Math.max(0, Math.min(100, 100 - lift))
     }
 
+    const setCueLine = (cue: unknown, line: number) => {
+      try {
+        const vttCue = cue as { snapToLines?: boolean; line?: number }
+        vttCue.snapToLines = false
+        vttCue.line = line
+      } catch {
+        // ignore
+      }
+    }
+
+    const cueMetrics = () => {
+      const raw = Number(player.state.subtitleFontSize)
+      const px = (isNaN(raw) ? 1.8 : raw) * 16
+      const h = video.videoHeight || video.clientHeight || 720
+      const w = video.videoWidth || video.clientWidth || 1280
+      return { step: ((px * 1.3) / h) * 100, chars: Math.max(20, Math.floor(w / (px * 0.55))) }
+    }
+
+    const restackTrack = (track: TextTrack) => {
+      const pos = getPos()
+      const active = Array.from(track.activeCues ?? [])
+      if (active.length <= 1) {
+        active.forEach((cue) => setCueLine(cue, pos))
+        return
+      }
+      const { step, chars } = cueMetrics()
+      let bottom = pos
+      for (let i = active.length - 1; i >= 0; i--) {
+        const text = String((active[i] as { text?: unknown }).text ?? '').replace(/<[^>]*>/g, '')
+        const visual = text
+          .split('\n')
+          .reduce((n, seg) => n + Math.max(1, Math.ceil(seg.length / chars)), 0)
+        const top = bottom - visual * step
+        setCueLine(active[i], Math.max(0, top))
+        bottom = top - step * 0.4
+      }
+    }
+
     const applyToTrack = (track: TextTrack) => {
       if (!track.cues) return
       const pos = getPos()
-      Array.from(track.cues).forEach((cue: unknown) => {
-        try {
-          const vttCue = cue as { snapToLines?: boolean; line?: number }
-          vttCue.snapToLines = false
-          vttCue.line = pos
-        } catch (e) {
-          // Ignore error
-        }
-      })
+      Array.from(track.cues).forEach((cue: unknown) => setCueLine(cue, pos))
+      if (track.mode === 'showing') restackTrack(track)
     }
 
     const applyToAllTracks = () => {
@@ -961,7 +1016,8 @@ const Player: React.FC = () => {
     applyToAllTracks()
 
     const handleCueChange = (e: Event) => {
-      applyToTrack(e.target as TextTrack)
+      const track = e.target as TextTrack
+      if (track.mode === 'showing') restackTrack(track)
     }
 
     Array.from(video.textTracks).forEach((t) => {
@@ -1005,6 +1061,93 @@ const Player: React.FC = () => {
     state.selectedLink,
     refs.videoRef,
   ])
+
+  useEffect(() => {
+    if (!isAnime4kEnabled) {
+      if (subtitleOverlayRef.current) {
+        subtitleOverlayRef.current.innerHTML = ''
+      }
+      return
+    }
+
+    const video = refs.videoRef.current
+    const overlay = subtitleOverlayRef.current
+    if (!video || !overlay) return
+
+    const updateOverlay = () => {
+      if (!overlay) return
+      let activeText = ''
+      const tracks = Array.from(video.textTracks || [])
+      for (const track of tracks) {
+        if (track.mode === 'showing' && track.activeCues) {
+          for (let i = 0; i < track.activeCues.length; i++) {
+            const cue = track.activeCues[i] as VTTCue
+            if (cue && cue.text) {
+              activeText += (activeText ? '\n' : '') + cue.text
+            }
+          }
+        }
+      }
+
+      if (!activeText) {
+        overlay.innerHTML = ''
+        return
+      }
+
+      const fontSize = `${player.state.subtitleFontSize || 2}rem`
+      const lift = Math.max(0, Math.min(100, Number(player.state.subtitlePosition) || 0))
+      const bottom = `${lift + 5}%`
+
+      overlay.innerHTML = `
+        <div style="
+          position: absolute;
+          bottom: ${bottom};
+          left: 50%;
+          transform: translateX(-50%);
+          text-align: center;
+          color: white;
+          background: rgba(0, 0, 0, 0.5);
+          font-size: ${fontSize};
+          text-shadow: 0 0 4px black;
+          padding: 2px 8px;
+          border-radius: 4px;
+          max-width: 85%;
+          line-height: 1.3;
+          pointer-events: none;
+          white-space: pre-wrap;
+        ">
+          ${activeText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+        </div>
+      `
+    }
+
+    updateOverlay()
+
+    const handleCueChange = () => updateOverlay()
+    const handleTimeUpdate = () => updateOverlay()
+
+    const tracks = Array.from(video.textTracks || [])
+    tracks.forEach((t) => t.addEventListener('cuechange', handleCueChange))
+    video.addEventListener('timeupdate', handleTimeUpdate)
+
+    const handleAddTrack = () => {
+      const currentTracks = Array.from(video.textTracks || [])
+      currentTracks.forEach((t) => {
+        t.removeEventListener('cuechange', handleCueChange)
+        t.addEventListener('cuechange', handleCueChange)
+      })
+      updateOverlay()
+    }
+    video.textTracks?.addEventListener('addtrack', handleAddTrack)
+
+    return () => {
+      const currentTracks = Array.from(video.textTracks || [])
+      currentTracks.forEach((t) => t.removeEventListener('cuechange', handleCueChange))
+      video.removeEventListener('timeupdate', handleTimeUpdate)
+      video.textTracks?.removeEventListener('addtrack', handleAddTrack)
+      if (overlay) overlay.innerHTML = ''
+    }
+  }, [isAnime4kEnabled, player.state.subtitleFontSize, player.state.subtitlePosition, refs.videoRef])
 
   const handleResume = () => {
     if (refs.videoRef.current) {
@@ -1418,36 +1561,52 @@ const Player: React.FC = () => {
                       setIsTheaterMode(newMode)
                       localStorage.setItem('playerTheaterMode', newMode.toString())
                     }}
+                    anime4kEnabled={isAnime4kEnabled}
+                    onAnime4kToggle={toggleAnime4k}
+                    anime4kSupported={isAnime4kSupported}
+                    anime4kProfile={anime4kProfile}
+                    onAnime4kProfileChange={handleAnime4kProfileChange}
+                    anime4kInitializing={isAnime4kInitializing}
                   />
                 )}{' '}
               {!isVideoLoading && state.videoSources.length > 0 && (
-                <video
-                  ref={refs.videoRef}
-                  controls={player.state.useNativeControls}
-                  playsInline
-                  webkit-playsinline="true"
-                  disablePictureInPicture
-                  disableRemotePlayback
-                  onPlay={actions.onPlay}
-                  onPause={actions.onPause}
-                  onLoadedMetadata={actions.onLoadedMetadata}
-                  onTimeUpdate={() => {
-                    actions.onTimeUpdate()
-                    if (
-                      pendingQueueTransition &&
-                      refs.videoRef.current &&
-                      refs.videoRef.current.currentTime < refs.videoRef.current.duration - 1
-                    ) {
-                      setPendingQueueTransition(null)
-                      setQueueCountdown(null)
-                    }
-                  }}
-                  onProgress={actions.onProgress}
-                  onVolumeChange={actions.onVolumeChange}
-                  onWaiting={actions.onWaiting}
-                  onPlaying={actions.onPlaying}
-                  onError={handleVideoSourceError}
-                />
+                <>
+                  <video
+                    ref={refs.videoRef}
+                    className={isAnime4kEnabled ? styles.videoElementHidden : undefined}
+                    controls={player.state.useNativeControls}
+                    playsInline
+                    webkit-playsinline="true"
+                    disablePictureInPicture
+                    disableRemotePlayback
+                    onPlay={actions.onPlay}
+                    onPause={actions.onPause}
+                    onLoadedMetadata={actions.onLoadedMetadata}
+                    onTimeUpdate={() => {
+                      actions.onTimeUpdate()
+                      if (
+                        pendingQueueTransition &&
+                        refs.videoRef.current &&
+                        refs.videoRef.current.currentTime < refs.videoRef.current.duration - 1
+                      ) {
+                        setPendingQueueTransition(null)
+                        setQueueCountdown(null)
+                      }
+                    }}
+                    onProgress={actions.onProgress}
+                    onVolumeChange={actions.onVolumeChange}
+                    onWaiting={actions.onWaiting}
+                    onPlaying={actions.onPlaying}
+                    onError={handleVideoSourceError}
+                  />
+                  <canvas
+                    ref={upscalerCanvasRef}
+                    className={`${styles.upscalerCanvas} ${isAnime4kEnabled ? styles.upscalerActive : ''}`}
+                  />
+                  {isAnime4kEnabled && (
+                    <div ref={subtitleOverlayRef} className={styles.subtitleOverlay} />
+                  )}
+                </>
               )}
             </>
           )}

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { spawn } = require('child_process')
+const { spawn, spawnSync, execSync } = require('child_process')
 const readline = require('readline')
 const http = require('http')
 const os = require('os')
@@ -192,6 +192,8 @@ const log = (prefix, color, data) => {
     if (isWin) {
       if (serverProcess) killPid(serverProcess.pid)
       if (clientProcess) killPid(clientProcess.pid)
+      freePort(5173)
+      freePort(3000)
     } else {
       if (serverProcess) {
         try {
@@ -246,7 +248,27 @@ const spawnNpm = (args, cwd, env) => {
 const killPid = (pid) => {
   if (!pid) return
   try {
-    spawn('taskkill', ['/pid', String(pid), '/f', '/t'], { stdio: 'ignore', windowsHide: true })
+    spawnSync('taskkill', ['/pid', String(pid), '/f', '/t'], { stdio: 'ignore', windowsHide: true })
+  } catch {}
+}
+
+const freePort = (port) => {
+  if (!isWin) return
+  try {
+    const out = execSync(
+      `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique"`,
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }
+    ).trim()
+    if (out) {
+      for (const rawPid of out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)) {
+        const p = parseInt(rawPid, 10)
+        if (p > 0 && p !== process.pid) {
+          try {
+            execSync(`taskkill /pid ${p} /f /t`, { stdio: 'ignore' })
+          } catch {}
+        }
+      }
+    }
   } catch {}
 }
 let serverProcess, clientProcess
@@ -261,6 +283,8 @@ async function main() {
   )
 
   if (mode === 'dev') {
+    freePort(5173)
+    freePort(3000)
     serverProcess = spawnNpm(['run', 'dev', '--workspace=dango-server'], __dirname, {
       NODE_ENV: 'development',
     })
@@ -319,8 +343,10 @@ const shutdown = () => {
   console.log(`\n${colors.system}[System]${colors.reset} Initiating clean shutdown...`)
 
   if (clientProcess) {
-    if (isWin) killPid(clientProcess.pid)
-    else {
+    if (isWin) {
+      killPid(clientProcess.pid)
+      freePort(5173)
+    } else {
       clientProcess.kill('SIGTERM')
       setTimeout(() => {
         if (clientProcess.connected || !clientProcess.killed) clientProcess.kill('SIGKILL')
@@ -328,12 +354,35 @@ const shutdown = () => {
     }
   }
 
-  const req = http.request({
-    hostname: '127.0.0.1',
-    port: 3000,
-    path: '/api/internal/shutdown',
-    method: 'POST',
-  })
+  const req = http.request(
+    {
+      hostname: '127.0.0.1',
+      port: 3000,
+      path: '/api/internal/shutdown',
+      method: 'POST',
+    },
+    (res) => {
+      if (res.statusCode !== 200) {
+        console.log(
+          `${colors.system}[System]${colors.reset} Server rejected shutdown request (${res.statusCode}), forcing exit.`
+        )
+        if (isWin && serverProcess) killPid(serverProcess.pid)
+        else if (serverProcess) {
+          try {
+            process.kill(-serverProcess.pid, 'SIGKILL')
+          } catch {}
+        }
+        if (clientProcess) {
+          if (isWin) killPid(clientProcess.pid)
+          else
+            try {
+              process.kill(-clientProcess.pid, 'SIGKILL')
+            } catch {}
+        }
+        setTimeout(() => process.exit(0), 1000)
+      }
+    }
+  )
 
   req.on('error', () => {
     console.log(`${colors.system}[System]${colors.reset} Server unreachable, forcing exit.`)
