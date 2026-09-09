@@ -1,82 +1,17 @@
-import { useEffect, useRef, Suspense, lazy } from 'react'
+import { useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate, useParams, useLocation } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import Header from './components/layout/Header'
 import Sidebar from './components/layout/Sidebar'
 import Footer from './components/layout/Footer'
 import { useTelemetry } from './hooks/useTelemetry'
-import { useSetting } from './hooks/useSettings'
+import { useDiscordPageStatus } from './hooks/useDiscordRPC'
+import { useAnilistAuthCallback } from './hooks/useAnilistAuthCallback'
+import { useLocalStorage } from './hooks/useLocalStorage'
 import VirtualKeyboard from './components/common/VirtualKeyboard'
 import { useVirtualKeyboard } from './hooks/useVirtualKeyboard'
 import { useAnimePaheCookie } from './hooks/useAnimePaheCookie'
 import AnimePaheCookieModal from './components/anime/AnimePaheCookieModal'
-
-function useDiscordPageStatus() {
-  const location = useLocation()
-  const { data: discordEnabled } = useSetting('discordRPCEnabled')
-  const sessionIdRef = useRef<string>('')
-  if (!sessionIdRef.current) {
-    sessionIdRef.current =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  }
-
-  useEffect(() => {
-    if (discordEnabled === false || discordEnabled === 'false') return
-
-    const sessionId = sessionIdRef.current
-    const heartbeat = () =>
-      fetch('/api/discord/heartbeat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      }).catch(() => {})
-
-    heartbeat()
-    const interval = setInterval(heartbeat, 15000)
-
-    const handlePageHide = () => {
-      navigator.sendBeacon(
-        '/api/discord/heartbeat',
-        new Blob([JSON.stringify({ sessionId, bye: true })], { type: 'application/json' })
-      )
-    }
-    window.addEventListener('pagehide', handlePageHide)
-
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('pagehide', handlePageHide)
-    }
-  }, [discordEnabled])
-
-  useEffect(() => {
-    if (discordEnabled === false || discordEnabled === 'false') return
-
-    const path = location.pathname
-
-    if (path.startsWith('/watch/') || path.startsWith('/player/')) return
-
-    let page = 'home'
-    if (path.startsWith('/search')) page = 'search'
-    else if (path.startsWith('/watchlist')) page = 'watchlist'
-    else if (path.startsWith('/anime/')) page = 'anime'
-    else if (path.startsWith('/insights')) page = 'insights'
-    else if (path.startsWith('/settings')) page = 'settings'
-    else if (path.startsWith('/map')) page = 'map'
-    else if (path.startsWith('/trackers')) page = 'trackers'
-    else if (path.startsWith('/asmr')) page = 'asmr'
-    else if (path.startsWith('/radio')) page = 'radio'
-    else if (path.startsWith('/tv')) page = 'tv'
-
-    fetch('/api/discord/status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ page }),
-    }).catch(() => {})
-  }, [location.pathname, discordEnabled])
-}
 
 const Home = lazy(() => import('./pages/Home'))
 const Watchlist = lazy(() => import('./pages/Watchlist'))
@@ -105,10 +40,8 @@ const PlayerRedirect = () => {
 }
 
 function App() {
-  const queryClient = useQueryClient()
   const {
     isOpen: animePaheOpen,
-    openModal: openAnimePaheModal,
     closeModal: closeAnimePaheModal,
     onSuccess,
   } = useAnimePaheCookie()
@@ -122,12 +55,7 @@ function App() {
   const virtualKeyboard = useVirtualKeyboard()
   useTelemetry()
   useDiscordPageStatus()
-
-  useEffect(() => {
-    const handleAuthRequired = () => openLanAuthModal()
-    window.addEventListener('LAN_AUTH_REQUIRED', handleAuthRequired)
-    return () => window.removeEventListener('LAN_AUTH_REQUIRED', handleAuthRequired)
-  }, [openLanAuthModal])
+  useAnilistAuthCallback()
 
   useEffect(() => {
     fetch('/api/auth/app-status')
@@ -140,58 +68,30 @@ function App() {
       .catch(() => {})
   }, [openLanAuthModal])
 
+  const [lanNoticeShown, setLanNoticeShown] = useLocalStorage<string>('lan_auth_notice_shown', '')
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    const anilistParam = searchParams.get('anilist')
-    if (anilistParam) {
-      const user = searchParams.get('user')
-      const reason = searchParams.get('reason')
-      window.history.replaceState(null, '', window.location.pathname)
-      if (anilistParam === 'success') {
-        toast.success(
-          user ? `Connected to AniList as ${decodeURIComponent(user)}` : 'Connected to AniList'
+    if (!lanNoticeShown) {
+      setLanNoticeShown('true')
+      setTimeout(() => {
+        toast(
+          'Optional LAN lock is available. Set a password in Settings to protect access from other devices on your network.',
+          {
+            duration: 10000,
+            icon: '🔒',
+            style: {
+              background: '#1a3a5c',
+              color: '#fff',
+              border: '1px solid #2a5a8c',
+            },
+          }
         )
-        queryClient.invalidateQueries({ queryKey: ['trackerStatus'] })
-      } else {
-        toast.error(reason ? decodeURIComponent(reason) : 'AniList authentication failed')
-      }
-      return
+      }, 3000)
     }
-
-    const hashParams = new URLSearchParams(window.location.hash.substring(1))
-    const accessToken = hashParams.get('access_token')
-    const code = searchParams.get('code')
-    if (!accessToken && !code) return
-
-    const redirectUri = window.location.origin + window.location.pathname
-    window.history.replaceState(null, '', window.location.pathname)
-
-    toast('Connecting to AniList...')
-    fetch('/api/tracker/anilist/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(accessToken ? { token: accessToken } : { code, redirectUri }),
-    })
-      .then(async (res) => {
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Authentication failed')
-        toast.success(`Connected to AniList as ${data.user.name}`)
-        queryClient.invalidateQueries({ queryKey: ['trackerStatus'] })
-      })
-      .catch((err) => {
-        toast.error(err.message || 'Failed to authenticate with AniList')
-      })
-  }, [queryClient])
+  }, [lanNoticeShown, setLanNoticeShown])
 
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [location.pathname])
-
-  useEffect(() => {
-    const handleAuthRequired = () => openAnimePaheModal()
-    window.addEventListener('ANIMEPAHE_AUTH_REQUIRED', handleAuthRequired)
-    return () => window.removeEventListener('ANIMEPAHE_AUTH_REQUIRED', handleAuthRequired)
-  }, [openAnimePaheModal])
 
   useEffect(() => {
     const handleKeydown = (event: KeyboardEvent) => {

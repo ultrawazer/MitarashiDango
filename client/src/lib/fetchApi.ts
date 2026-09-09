@@ -1,3 +1,5 @@
+import { emitAuthRequired } from './auth-bus'
+
 export const fetchApi = async (url: string) => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -26,12 +28,15 @@ export const fetchApi = async (url: string) => {
     const errorMsg = typeof data.error === 'string' ? data.error : ''
 
     if (response.status === 403 && errorMsg === 'AUTH_REQUIRED' && data.provider === 'animepahe') {
+      emitAuthRequired('animepahe')
       window.dispatchEvent(new CustomEvent('ANIMEPAHE_AUTH_REQUIRED'))
     }
     if (response.status === 403 && errorMsg === 'AUTH_REQUIRED' && data.provider === 'jasmr') {
+      emitAuthRequired('jasmr')
       window.dispatchEvent(new CustomEvent('JASMR_AUTH_REQUIRED'))
     }
     if (response.status === 401 && errorMsg === 'LAN_AUTH_REQUIRED') {
+      emitAuthRequired('lan')
       window.dispatchEvent(new CustomEvent('LAN_AUTH_REQUIRED'))
     }
 

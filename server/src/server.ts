@@ -10,6 +10,7 @@ import fs from 'fs'
 import { DatabaseWrapper } from './db'
 import chokidar from 'chokidar'
 import logger from './logger'
+import { notifyServerExit } from './lib/ipc'
 import { crossSiteProtectionMiddleware, isAllowedOrigin } from './utils/security.utils'
 
 import { shokoProvider } from './providers/shoko.provider'
@@ -317,14 +318,14 @@ async function main() {
       try {
         await syncUp(db, dbPath, remoteFolder)
       } catch (e) {
-        console.error('Final sync on shutdown failed:', e)
+        logger.error({ err: e }, 'Final sync on shutdown failed')
       }
     }
 
     await waitForSync()
 
     db.close(() => {
-      console.log('[SERVER_EXIT]')
+      notifyServerExit()
       if (signal === 'SIGUSR2') {
         process.kill(process.pid, 'SIGUSR2')
       }
@@ -347,6 +348,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Server failed to start:', err)
+  logger.error({ err }, 'Server failed to start')
   process.exit(1)
 })

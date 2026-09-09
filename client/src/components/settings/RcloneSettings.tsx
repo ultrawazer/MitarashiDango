@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from '../common/Button'
-import StatusModal from '../common/StatusModal'
+import { Modal } from '../common/Modal'
 import styles from './GoogleAuthSettings.module.css'
 
 const RcloneSettings: React.FC = () => {
@@ -118,12 +118,16 @@ const RcloneSettings: React.FC = () => {
         <Button onClick={handleSave}>Save Rclone Settings</Button>
       </div>
 
-      <StatusModal
-        show={statusModal.show}
-        message={statusModal.message}
-        type={statusModal.type}
+      <Modal
+        isOpen={statusModal.show}
         onClose={() => setStatusModal((prev) => ({ ...prev, show: false }))}
-      />
+        width="sm"
+        footer={
+          <Button onClick={() => setStatusModal((prev) => ({ ...prev, show: false }))}>OK</Button>
+        }
+      >
+        <p style={{ color: 'var(--text-secondary)' }}>{statusModal.message}</p>
+      </Modal>
     </div>
   )
 }

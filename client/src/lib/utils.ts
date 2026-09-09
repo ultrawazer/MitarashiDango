@@ -124,3 +124,9 @@ export const formatTime = (timeInSeconds: number): string => {
   const hours = parseInt(result.slice(0, 2), 10)
   return hours > 0 ? result : result.slice(3)
 }
+
+export const sanitizeText = (text: string | undefined | null): string => {
+  if (!text) return ''
+  return text.replace(/<[^>]*>?/gm, '').trim()
+}
+
