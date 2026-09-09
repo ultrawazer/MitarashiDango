@@ -10,8 +10,6 @@ import { useAnilistAuthCallback } from './hooks/useAnilistAuthCallback'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import VirtualKeyboard from './components/common/VirtualKeyboard'
 import { useVirtualKeyboard } from './hooks/useVirtualKeyboard'
-import { useAnimePaheCookie } from './hooks/useAnimePaheCookie'
-import AnimePaheCookieModal from './components/anime/AnimePaheCookieModal'
 
 const Home = lazy(() => import('./pages/Home'))
 const Watchlist = lazy(() => import('./pages/Watchlist'))
@@ -40,11 +38,6 @@ const PlayerRedirect = () => {
 }
 
 function App() {
-  const {
-    isOpen: animePaheOpen,
-    closeModal: closeAnimePaheModal,
-    onSuccess,
-  } = useAnimePaheCookie()
   const { isOpen: sidebarOpen, setIsOpen } = useSidebar()
   const {
     isOpen: lanAuthOpen,
@@ -116,11 +109,6 @@ function App() {
 
   return (
     <div className="app-container">
-      <AnimePaheCookieModal
-        isOpen={animePaheOpen}
-        onClose={closeAnimePaheModal}
-        onSuccess={onSuccess}
-      />
       <LanAuthModal isOpen={lanAuthOpen} onClose={closeLanAuthModal} onSuccess={() => {}} />
       <Toaster
         position="top-center"

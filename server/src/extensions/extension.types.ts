@@ -10,6 +10,7 @@ export interface ExtensionMetadata {
   description?: string
   icon?: string
   author?: string
+  authUrl?: string
 }
 
 export interface Show {

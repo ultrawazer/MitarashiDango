@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import NodeCache from 'node-cache'
 import { AsmrExtension } from '../extensions/extension.types'
 import logger from '../logger'
+import { getExtensionContext } from '../utils/request-context'
 
 function makeCacheMiddleware(cache: NodeCache, keyFn: (req: Request) => string, ttl?: number) {
   return (req: Request, res: Response, next: () => void) => {
@@ -44,6 +45,7 @@ export function createAsmrRouter(
           return res.json({ shows: [], hasNext: false })
         }
 
+        const ctx = getExtensionContext('jasmr', req.headers)
         const result = await provider.browse(
           {
             query: req.query.q as string,
@@ -51,15 +53,17 @@ export function createAsmrRouter(
             sort: req.query.sort as string,
             rating: req.query.rating as string,
           },
-          {
-            jasmr_ua: req.headers['x-jasmr-ua'] as string,
-            jasmr_cookie: req.headers['x-jasmr-cookie'] as string,
-          }
+          ctx
         )
         res.json(result)
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
-          return res.status(403).json({ error: 'AUTH_REQUIRED', provider: 'jasmr' })
+          return res.status(403).json({
+            error: 'AUTH_REQUIRED',
+            provider: 'jasmr',
+            name: 'Japanese ASMR',
+            authUrl: 'https://japaneseasmr.com',
+          })
         }
         logger.error({ err }, '[Asmr] browse failed')
         res.json({ shows: [], hasNext: false })
@@ -78,10 +82,7 @@ export function createAsmrRouter(
         }
 
         const rjCode = String(req.params.rj).trim().toUpperCase()
-        const ctx = {
-          jasmr_ua: req.headers['x-jasmr-ua'] as string,
-          jasmr_cookie: req.headers['x-jasmr-cookie'] as string,
-        }
+        const ctx = getExtensionContext('jasmr', req.headers)
 
         const episodes = await provider.getEpisodes(rjCode, ctx)
         const streams = await provider.getStreamUrls(rjCode, '1', ctx)
@@ -97,7 +98,12 @@ export function createAsmrRouter(
         })
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
-          return res.status(403).json({ error: 'AUTH_REQUIRED', provider: 'jasmr' })
+          return res.status(403).json({
+            error: 'AUTH_REQUIRED',
+            provider: 'jasmr',
+            name: 'Japanese ASMR',
+            authUrl: 'https://japaneseasmr.com',
+          })
         }
         logger.error({ err, rj: req.params.rj }, '[Asmr] work fetch failed')
         res.json({ rjCode: req.params.rj, description: '', tracks: [], images: [], chapters: [] })

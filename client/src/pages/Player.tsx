@@ -39,7 +39,6 @@ import type { QueueItem } from '../hooks/useAnimeData'
 import type { VideoLink, SubtitleTrack } from '../types/player'
 import AnimeMetaDetails from '../components/anime/AnimeMetaDetails'
 import SynopsisText from '../components/anime/SynopsisText'
-import AnimePaheCookieModal from '../components/anime/AnimePaheCookieModal'
 import QueueOptionsButton from '../components/anime/QueueOptionsButton'
 import { useSetting } from '../hooks/useSettings'
 
@@ -1404,22 +1403,6 @@ const Player: React.FC = () => {
         isShowCompleted={isShowCompleted}
         onMoveToCompleted={handleMoveToCompletedAndNavigate}
         isMovingToCompleted={isUpdatingWatchlistStatus}
-      />
-
-      <AnimePaheCookieModal
-        isOpen={!!state.showCookieModal}
-        onClose={() => dispatch({ type: 'SET_STATE', payload: { showCookieModal: false } })}
-        onSuccess={() => {
-          queryClient.invalidateQueries({
-            queryKey: [
-              'video-sources',
-              showId,
-              state.currentEpisode,
-              state.selectedProvider,
-              state.currentMode,
-            ],
-          })
-        }}
       />
 
       {!isTheaterMode && (

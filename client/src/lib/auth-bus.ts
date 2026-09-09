@@ -1,35 +1,45 @@
 // Typed pub/sub for auth-modal triggers.
 //
 // API responses signal auth requirements from outside React (see `fetchApi`),
-// while the modal state lives in context providers. Instead of global
-// window.dispatchEvent hacks, dispatch sites emit here and the owning
-// providers subscribe and open their own modals.
-export type AuthModalKind = 'lan' | 'animepahe' | 'jasmr'
+// while modal state lives in context providers (e.g. LanAuthProvider, ExtensionAuthProvider).
+// Instead of hardcoding specific providers, 'extension' auth passes a structured payload.
 
-type AuthModalListener = () => void
-
-const listeners: Record<AuthModalKind, Set<AuthModalListener>> = {
-  lan: new Set(),
-  animepahe: new Set(),
-  jasmr: new Set(),
+export interface ExtensionAuthPayload {
+  extensionId: string
+  extensionName?: string
+  verificationUrl?: string
+  authType?: 'cloudflare' | 'cookie' | 'credentials'
 }
 
-export function subscribeAuthRequired(
+export type AuthModalKind = 'lan' | 'extension'
+
+type AuthListener<T = unknown> = (payload?: T) => void
+
+const listeners = new Map<string, Set<AuthListener<any>>>()
+
+export function subscribeAuthRequired<T = unknown>(
   kind: AuthModalKind,
-  listener: AuthModalListener
+  listener: AuthListener<T>
 ): () => void {
-  listeners[kind].add(listener)
+  if (!listeners.has(kind)) {
+    listeners.set(kind, new Set())
+  }
+  const set = listeners.get(kind)!
+  set.add(listener)
   return () => {
-    listeners[kind].delete(listener)
+    set.delete(listener)
   }
 }
 
-export function emitAuthRequired(kind: AuthModalKind): void {
-  for (const listener of Array.from(listeners[kind])) {
-    try {
-      listener()
-    } catch {
-      // Ignore listener errors
+export function emitAuthRequired<T = unknown>(kind: AuthModalKind, payload?: T): void {
+  const set = listeners.get(kind)
+  if (set) {
+    for (const listener of Array.from(set)) {
+      try {
+        listener(payload)
+      } catch {
+        // Ignore listener errors
+      }
     }
   }
 }

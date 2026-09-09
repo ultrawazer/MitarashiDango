@@ -24,6 +24,7 @@ import { SettingsRepository } from '../repositories/settings.repository'
 import { animeIdMapper } from '../lib/anime-id-mapper'
 import { shokoClient } from '../lib/shoko.client'
 import logger from '../logger'
+import { getExtensionContext } from '../utils/request-context'
 
 export class DataController {
   private getProviderByName: (name: string) => Provider | null
@@ -256,17 +257,27 @@ export class DataController {
         }
       }
 
+      const activeProviderKey = providerKey || 'allanime'
       const provider = this.getProvider(req)
       if (!provider) return res.json([])
+      const extContext = getExtensionContext(activeProviderKey, req.headers)
       const urls = await provider.getStreamUrls(
         showId,
         req.query.episodeNumber as string,
-        req.query.mode as 'sub' | 'dub'
+        req.query.mode as 'sub' | 'dub',
+        extContext
       )
       res.json(urls || [])
     } catch (e) {
+      const activeProviderKey = (req.query.provider as string)?.toLowerCase() || 'allanime'
       if ((e as Error).message === 'AUTH_REQUIRED') {
-        return res.status(403).json({ error: 'AUTH_REQUIRED', provider: 'animepahe' })
+        const provider = this.getProvider(req)
+        return res.status(403).json({
+          error: 'AUTH_REQUIRED',
+          provider: activeProviderKey,
+          name: (provider as any)?.metadata?.name,
+          authUrl: activeProviderKey === 'animepahe' ? 'https://animepahe.pw' : undefined,
+        })
       }
       logger.error({ err: e, provider: req.query.provider }, 'Provider video fetch failed')
       res.json([])
@@ -296,13 +307,24 @@ export class DataController {
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(showId)) {
       try {
         if (animepaheProvider) {
+          const extContext = getExtensionContext('animepahe', req.headers)
           const data = await animepaheProvider.getEpisodes(
             showId,
-            req.query.mode as 'sub' | 'dub'
+            req.query.mode as 'sub' | 'dub',
+            extContext?.ua,
+            extContext?.cookie,
+            extContext
           )
           return res.json(data || { episodes: [] })
         }
-      } catch {
+      } catch (err) {
+        if ((err as Error).message === 'AUTH_REQUIRED') {
+          return res.status(403).json({
+            error: 'AUTH_REQUIRED',
+            provider: 'animepahe',
+            authUrl: 'https://animepahe.pw',
+          })
+        }
         return res.json({ episodes: [] })
       }
     }

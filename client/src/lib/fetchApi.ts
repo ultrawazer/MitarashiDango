@@ -1,18 +1,11 @@
-import { emitAuthRequired } from './auth-bus'
+import { emitAuthRequired, type ExtensionAuthPayload } from './auth-bus'
+import { getAllExtensionHeaders, getKnownVerificationUrl } from './extension-auth'
 
 export const fetchApi = async (url: string) => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...getAllExtensionHeaders(),
   }
-  const animepaheUa = localStorage.getItem('animepahe_ua')
-  const animepaheCookie = localStorage.getItem('animepahe_cookie')
-  const jasmrUa = localStorage.getItem('jasmr_ua')
-  const jasmrCookie = localStorage.getItem('jasmr_cookie')
-
-  if (animepaheUa) headers['x-animepahe-ua'] = animepaheUa
-  if (animepaheCookie) headers['x-animepahe-cookie'] = animepaheCookie
-  if (jasmrUa) headers['x-jasmr-ua'] = jasmrUa
-  if (jasmrCookie) headers['x-jasmr-cookie'] = jasmrCookie
 
   const response = await fetch(url, { headers })
 
@@ -27,17 +20,21 @@ export const fetchApi = async (url: string) => {
 
     const errorMsg = typeof data.error === 'string' ? data.error : ''
 
-    if (response.status === 403 && errorMsg === 'AUTH_REQUIRED' && data.provider === 'animepahe') {
-      emitAuthRequired('animepahe')
-      window.dispatchEvent(new CustomEvent('ANIMEPAHE_AUTH_REQUIRED'))
+    if (response.status === 403 && errorMsg === 'AUTH_REQUIRED') {
+      const providerId = (typeof data.provider === 'string' ? data.provider : '') || 'unknown'
+      const authPayload: ExtensionAuthPayload = {
+        extensionId: providerId,
+        extensionName: typeof data.name === 'string' ? data.name : undefined,
+        verificationUrl:
+          typeof data.authUrl === 'string'
+            ? data.authUrl
+            : getKnownVerificationUrl(providerId),
+      }
+      emitAuthRequired('extension', authPayload)
     }
-    if (response.status === 403 && errorMsg === 'AUTH_REQUIRED' && data.provider === 'jasmr') {
-      emitAuthRequired('jasmr')
-      window.dispatchEvent(new CustomEvent('JASMR_AUTH_REQUIRED'))
-    }
+
     if (response.status === 401 && errorMsg === 'LAN_AUTH_REQUIRED') {
       emitAuthRequired('lan')
-      window.dispatchEvent(new CustomEvent('LAN_AUTH_REQUIRED'))
     }
 
     throw new Error(errorMsg || `Failed to fetch from ${url}`)

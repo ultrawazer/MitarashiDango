@@ -59,17 +59,30 @@ const app = express()
 
 app.use((req, res, next) => {
   const store = new Map<string, string>()
+
+  // Generic extension headers: x-ext-<id>-cookie, x-ext-<id>-ua
+  for (const [key, val] of Object.entries(req.headers)) {
+    if (typeof val === 'string' && key.startsWith('x-ext-')) {
+      store.set(key, val)
+    }
+  }
+
+  // Legacy headers
   if (req.headers['x-animepahe-ua']) {
     store.set('ua', req.headers['x-animepahe-ua'] as string)
+    store.set('x-ext-animepahe-ua', req.headers['x-animepahe-ua'] as string)
   }
   if (req.headers['x-animepahe-cookie']) {
     store.set('cookie', req.headers['x-animepahe-cookie'] as string)
+    store.set('x-ext-animepahe-cookie', req.headers['x-animepahe-cookie'] as string)
   }
   if (req.headers['x-jasmr-ua']) {
     store.set('jasmr_ua', req.headers['x-jasmr-ua'] as string)
+    store.set('x-ext-jasmr-ua', req.headers['x-jasmr-ua'] as string)
   }
   if (req.headers['x-jasmr-cookie']) {
     store.set('jasmr_cookie', req.headers['x-jasmr-cookie'] as string)
+    store.set('x-ext-jasmr-cookie', req.headers['x-jasmr-cookie'] as string)
   }
   requestContext.run(store, next)
 })
