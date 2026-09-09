@@ -14,6 +14,7 @@ import { FaCog, FaCloud, FaDatabase, FaList, FaServer, FaChartPie, FaPuzzlePiece
 import LocalMediaSettings from '../components/settings/LocalMediaSettings'
 import OfflineDbSettings from '../components/settings/OfflineDbSettings'
 import ExtensionsSettings from '../components/settings/ExtensionsSettings'
+import FlareSolverrSettings from '../components/settings/FlareSolverrSettings'
 import ThemeSettings from '../components/settings/ThemeSettings'
 import { useLowEndMode } from '../contexts/LowEndModeContext'
 import ToggleSwitch from '../components/common/ToggleSwitch'
@@ -533,6 +534,7 @@ const Settings: React.FC = () => {
                 </div>
               )}
             </div>
+            <FlareSolverrSettings />
           </div>
         )
       case 'themes':

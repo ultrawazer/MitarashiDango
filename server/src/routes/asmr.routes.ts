@@ -3,6 +3,7 @@ import NodeCache from 'node-cache'
 import { AsmrExtension } from '../extensions/extension.types'
 import logger from '../logger'
 import { getExtensionContext } from '../utils/request-context'
+import { flareSolverrService } from '../services/flaresolverr.service'
 
 function makeCacheMiddleware(cache: NodeCache, keyFn: (req: Request) => string, ttl?: number) {
   return (req: Request, res: Response, next: () => void) => {
@@ -39,11 +40,11 @@ export function createAsmrRouter(
       300
     ),
     async (req, res) => {
+      const provider = getAsmrProvider(req.query.provider as string)
+      if (!provider) {
+        return res.json({ shows: [], hasNext: false })
+      }
       try {
-        const provider = getAsmrProvider(req.query.provider as string)
-        if (!provider) {
-          return res.json({ shows: [], hasNext: false })
-        }
 
         const ctx = getExtensionContext('jasmr', req.headers)
         const result = await provider.browse(
@@ -58,6 +59,26 @@ export function createAsmrRouter(
         res.json(result)
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
+          if (await flareSolverrService.isEnabled(req.db)) {
+            const solved = await flareSolverrService.solveAndCache('jasmr', 'https://japaneseasmr.com', req.db)
+            if (solved.success) {
+              try {
+                const retryCtx = getExtensionContext('jasmr', req.headers)
+                const result = await provider.browse(
+                  {
+                    query: req.query.q as string,
+                    page: parseInt(req.query.page as string) || 1,
+                    sort: req.query.sort as string,
+                    rating: req.query.rating as string,
+                  },
+                  retryCtx
+                )
+                return res.json(result)
+              } catch (retryErr) {
+                logger.warn({ err: retryErr }, '[Asmr] browse retry after FlareSolverr solve failed')
+              }
+            }
+          }
           return res.status(403).json({
             error: 'AUTH_REQUIRED',
             provider: 'jasmr',
@@ -75,13 +96,12 @@ export function createAsmrRouter(
     '/asmr/work/:rj',
     makeCacheMiddleware(apiCache, (req) => `route-asmr-work-${req.params.rj}`, 1800),
     async (req, res) => {
+      const provider = getAsmrProvider(req.query.provider as string)
+      const rjCode = String(req.params.rj).trim().toUpperCase()
+      if (!provider) {
+        return res.json({ rjCode, description: '', tracks: [], images: [], chapters: [] })
+      }
       try {
-        const provider = getAsmrProvider(req.query.provider as string)
-        if (!provider) {
-          return res.json({ rjCode: req.params.rj, description: '', tracks: [], images: [], chapters: [] })
-        }
-
-        const rjCode = String(req.params.rj).trim().toUpperCase()
         const ctx = getExtensionContext('jasmr', req.headers)
 
         const episodes = await provider.getEpisodes(rjCode, ctx)
@@ -98,6 +118,28 @@ export function createAsmrRouter(
         })
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
+          if (await flareSolverrService.isEnabled(req.db)) {
+            const solved = await flareSolverrService.solveAndCache('jasmr', 'https://japaneseasmr.com', req.db)
+            if (solved.success) {
+              try {
+                const retryCtx = getExtensionContext('jasmr', req.headers)
+                const episodes = await provider.getEpisodes(rjCode, retryCtx)
+                const streams = await provider.getStreamUrls(rjCode, '1', retryCtx)
+                const images = provider.getImages ? await provider.getImages(rjCode, retryCtx) : []
+                const chapters = provider.getChapters ? await provider.getChapters(rjCode, retryCtx) : []
+
+                return res.json({
+                  rjCode,
+                  description: episodes?.description || '',
+                  tracks: streams?.[0]?.links || [],
+                  images,
+                  chapters,
+                })
+              } catch (retryErr) {
+                logger.warn({ err: retryErr }, '[Asmr] work retry after FlareSolverr solve failed')
+              }
+            }
+          }
           return res.status(403).json({
             error: 'AUTH_REQUIRED',
             provider: 'jasmr',

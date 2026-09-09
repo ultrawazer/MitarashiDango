@@ -43,6 +43,8 @@ import { createInsightsRouter } from './routes/insights.routes'
 import { createTranslateRouter } from './routes/translate.routes'
 import { createDiscordGatewayRouter } from './routes/discord-gateway.routes'
 import { createTrackerRouter } from './routes/tracker.routes'
+import { createFlareSolverrRouter } from './routes/flaresolverr.routes'
+import { flareSolverrService } from './services/flaresolverr.service'
 import { discordRPCService } from './discord-rpc'
 import { discordGatewayService } from './discord-gateway'
 import { SettingsRepository } from './repositories/settings.repository'
@@ -192,6 +194,7 @@ app.use('/api', createTranslateRouter())
 app.use('/api', createDiscordGatewayRouter())
 app.use('/api', createTrackerRouter())
 app.use('/api', createLocalMediaRouter())
+app.use('/api', createFlareSolverrRouter())
 app.use(
   '/api',
   createSettingsRouter(
@@ -200,6 +203,7 @@ app.use(
     (newDb) => {
       db = newDb
       shokoClient.setDb(newDb)
+      flareSolverrService.setDb(newDb)
     }
   )
 )
@@ -249,6 +253,7 @@ async function main() {
   db = await initializeDatabase(dbPath)
   logger.info(`Database initialized at ${dbPath}`)
 
+  flareSolverrService.setDb(db)
   await extensionManager.init()
 
   shokoClient.init(db)

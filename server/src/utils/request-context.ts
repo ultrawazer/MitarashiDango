@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { ExtensionContext } from '../extensions/extension.types'
+import { flareSolverrService } from '../services/flaresolverr.service'
 
 export const requestContext = new AsyncLocalStorage<Map<string, string>>()
 
@@ -32,6 +33,17 @@ export function getExtensionContext(
     ua = (reqHeaders?.['x-animepahe-ua'] as string) || store?.get('ua')
   } else if (id === 'jasmr') {
     ua = (reqHeaders?.['x-jasmr-ua'] as string) || store?.get('jasmr_ua')
+  }
+
+  // 3. Fallback to FlareSolverr cached credentials if not supplied by client
+  if (id) {
+    const fsCreds = flareSolverrService.getCachedCredentials(id)
+    if (!cookie && fsCreds?.cookie) {
+      cookie = fsCreds.cookie
+    }
+    if (!ua && fsCreds?.ua) {
+      ua = fsCreds.ua
+    }
   }
 
   return {

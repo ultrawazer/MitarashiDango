@@ -26,6 +26,7 @@ import { shokoClient } from '../lib/shoko.client'
 import logger from '../logger'
 import { getExtensionContext } from '../utils/request-context'
 import { extensionManager } from '../extensions/extension-manager'
+import { flareSolverrService } from '../services/flaresolverr.service'
 
 export class DataController {
   private getProviderByName: (name: string) => Provider | null
@@ -111,8 +112,8 @@ export class DataController {
   }
 
   getVideo = async (req: Request, res: Response) => {
+    let showId = req.query.showId as string
     try {
-      let showId = req.query.showId as string
       const providerName = req.query.provider as string
       const episodeNumber = (req.query.episodeNumber as string) || '1'
 
@@ -273,11 +274,33 @@ export class DataController {
       const activeProviderKey = (req.query.provider as string)?.toLowerCase() || 'allanime'
       if ((e as Error).message === 'AUTH_REQUIRED') {
         const provider = this.getProvider(req)
+        const authUrl =
+          (provider as any)?.metadata?.authUrl ||
+          (activeProviderKey === 'animepahe' ? 'https://animepahe.pw' : undefined)
+
+        if (authUrl && (await flareSolverrService.isEnabled(req.db))) {
+          const solved = await flareSolverrService.solveAndCache(activeProviderKey, authUrl, req.db)
+          if (solved.success && provider) {
+            try {
+              const retryContext = getExtensionContext(activeProviderKey, req.headers)
+              const urls = await provider.getStreamUrls(
+                showId,
+                req.query.episodeNumber as string,
+                req.query.mode as 'sub' | 'dub',
+                retryContext
+              )
+              return res.json(urls || [])
+            } catch (retryErr) {
+              logger.warn({ err: retryErr }, 'Retry after FlareSolverr solve failed')
+            }
+          }
+        }
+
         return res.status(403).json({
           error: 'AUTH_REQUIRED',
           provider: activeProviderKey,
           name: (provider as any)?.metadata?.name,
-          authUrl: activeProviderKey === 'animepahe' ? 'https://animepahe.pw' : undefined,
+          authUrl,
         })
       }
       logger.error({ err: e, provider: req.query.provider }, 'Provider video fetch failed')
@@ -320,6 +343,24 @@ export class DataController {
         }
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
+          if (await flareSolverrService.isEnabled(req.db)) {
+            const solved = await flareSolverrService.solveAndCache('animepahe', 'https://animepahe.pw', req.db)
+            if (solved.success && animepaheProvider) {
+              try {
+                const retryContext = getExtensionContext('animepahe', req.headers)
+                const data = await animepaheProvider.getEpisodes(
+                  showId,
+                  req.query.mode as 'sub' | 'dub',
+                  retryContext?.ua,
+                  retryContext?.cookie,
+                  retryContext
+                )
+                return res.json(data || { episodes: [] })
+              } catch (retryErr) {
+                logger.warn({ err: retryErr }, 'Retry getEpisodes after FlareSolverr solve failed')
+              }
+            }
+          }
           return res.status(403).json({
             error: 'AUTH_REQUIRED',
             provider: 'animepahe',
