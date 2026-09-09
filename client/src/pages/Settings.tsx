@@ -25,6 +25,7 @@ import {
   VIRTUAL_KEYBOARD_ENABLED_KEY,
 } from '../hooks/useVirtualKeyboard'
 import { useSetting, useUpdateSetting } from '../hooks/useSettings'
+import { useSystemNotifications } from '../hooks/useAnimeData'
 import { Alert } from '../components/common/Alert'
 
 type SettingsTab = 'general' | 'themes' | 'sync' | 'watchlist' | 'insights' | 'database' | 'local-media' | 'extensions'
@@ -47,6 +48,8 @@ const Settings: React.FC = () => {
   const [installationId, setInstallationId] = useState<string>(
     localStorage.getItem('installation_id') || ''
   )
+  const { data: systemNotifications = [] } = useSystemNotifications()
+  const hasExtensionUpdates = systemNotifications.some((sn) => sn.id === 'system-extension-updates')
 
   useEffect(() => {
     fetch('/api/installation-id')
@@ -660,6 +663,19 @@ const Settings: React.FC = () => {
             id="tab-extensions-btn"
           >
             <FaPuzzlePiece /> <span>Extensions</span>
+            {hasExtensionUpdates && (
+              <span
+                style={{
+                  marginLeft: 'auto',
+                  background: '#eab308',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  boxShadow: '0 0 6px rgba(234, 179, 8, 0.6)',
+                }}
+                title="Extension updates available"
+              />
+            )}
           </button>
           <button
             className={`${styles.sidebarItem} ${activeTab === 'sync' ? styles.active : ''}`}

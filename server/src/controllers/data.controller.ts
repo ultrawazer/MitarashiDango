@@ -25,6 +25,7 @@ import { animeIdMapper } from '../lib/anime-id-mapper'
 import { shokoClient } from '../lib/shoko.client'
 import logger from '../logger'
 import { getExtensionContext } from '../utils/request-context'
+import { extensionManager } from '../extensions/extension-manager'
 
 export class DataController {
   private getProviderByName: (name: string) => Provider | null
@@ -629,6 +630,22 @@ export class DataController {
         icon: 'warning',
         createdAt: Date.now(),
       })
+    }
+    try {
+      const updates = await extensionManager.checkUpdates()
+      if (updates && updates.length > 0) {
+        const extNames = updates.map((u) => `${u.name} (v${u.currentVersion} → v${u.latestVersion})`).join(', ')
+        notifications.push({
+          id: 'system-extension-updates',
+          type: 'system',
+          title: 'Extension Updates Available',
+          message: `Update${updates.length > 1 ? 's are' : ' is'} available for: ${extNames}. Update them in Settings → Extensions.`,
+          icon: 'info',
+          createdAt: Date.now(),
+        })
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Could not check extension updates for system notifications')
     }
     res.json(notifications)
   }

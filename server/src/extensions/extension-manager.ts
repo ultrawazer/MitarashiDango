@@ -62,10 +62,7 @@ export class ExtensionManager {
     this.loadRegistry()
     this.loadRepositories()
 
-    // 3. Sync from local extensions repo if present
-    this.syncLocalDevExtensions()
-
-    // 4. Load all installed extension files from disk
+    // 3. Load all installed extension files from disk
     this.loadAllFromDisk()
 
     log.info(
@@ -125,37 +122,7 @@ export class ExtensionManager {
     }
   }
 
-  private syncLocalDevExtensions(): void {
-    if (fs.existsSync(LOCAL_DEV_EXTENSIONS_DIR)) {
-      try {
-        const files = fs.readdirSync(LOCAL_DEV_EXTENSIONS_DIR).filter((f) => f.endsWith('.js'))
-        for (const f of files) {
-          const src = path.join(LOCAL_DEV_EXTENSIONS_DIR, f)
-          const dest = path.join(this.extensionsDir, f)
-          let shouldCopy = false
-          if (!fs.existsSync(dest)) {
-            shouldCopy = true
-          } else {
-            try {
-              const srcTime = fs.statSync(src).mtimeMs
-              const destTime = fs.statSync(dest).mtimeMs
-              if (srcTime > destTime) {
-                shouldCopy = true
-              }
-            } catch {
-              // ignore stat error
-            }
-          }
-          if (shouldCopy) {
-            fs.copyFileSync(src, dest)
-            log.info({ file: f }, 'Synced extension bundle from local dev repository')
-          }
-        }
-      } catch (err) {
-        log.warn({ err }, 'Could not sync from local dev extensions directory')
-      }
-    }
-  }
+
 
   private loadAllFromDisk(): void {
     try {
@@ -418,6 +385,68 @@ export class ExtensionManager {
     return Array.from(this.installedRecords.values())
   }
 
+  public async getInstalledWithUpdates(): Promise<
+    (InstalledExtensionRecord & {
+      hasUpdate?: boolean
+      latestVersion?: string
+      downloadUrl?: string
+    })[]
+  > {
+    const installedList = Array.from(this.installedRecords.values())
+    try {
+      const available = await this.getAvailable()
+      const availMap = new Map(available.map((a) => [a.id, a]))
+      return installedList.map((inst) => {
+        const avail = availMap.get(inst.id)
+        const hasUpdate = !!avail && avail.version !== inst.metadata.version
+        return {
+          ...inst,
+          hasUpdate,
+          latestVersion: avail?.version,
+          downloadUrl: avail?.downloadUrl,
+        }
+      })
+    } catch {
+      return installedList
+    }
+  }
+
+  public async checkUpdates(): Promise<
+    {
+      id: string
+      name: string
+      currentVersion: string
+      latestVersion: string
+      downloadUrl?: string
+    }[]
+  > {
+    try {
+      const available = await this.getAvailable()
+      const updates: {
+        id: string
+        name: string
+        currentVersion: string
+        latestVersion: string
+        downloadUrl?: string
+      }[] = []
+      for (const item of available) {
+        if (item.installed && item.hasUpdate && item.currentVersion) {
+          updates.push({
+            id: item.id,
+            name: item.name,
+            currentVersion: item.currentVersion,
+            latestVersion: item.version,
+            downloadUrl: item.downloadUrl,
+          })
+        }
+      }
+      return updates
+    } catch (err) {
+      log.warn({ err }, 'Failed to check extension updates')
+      return []
+    }
+  }
+
   public async getAvailable(): Promise<
     (ExtensionMetadata & {
       pkg: string
@@ -598,7 +627,6 @@ export class ExtensionManager {
   }
 
   public reload(): void {
-    this.syncLocalDevExtensions()
     this.animeExtensions.clear()
     this.tvExtensions.clear()
     this.asmrExtensions.clear()

@@ -5,17 +5,28 @@ import logger from '../logger'
 export function createExtensionRouter(manager: ExtensionManager): Router {
   const router = Router()
 
-  // List installed extensions
-  router.get('/extensions', (req: Request, res: Response) => {
+  // List installed extensions (enriched with update availability)
+  router.get('/extensions', async (req: Request, res: Response) => {
     try {
       const type = req.query.type as string | undefined
-      let installed = manager.getInstalled()
+      let installed = await manager.getInstalledWithUpdates()
       if (type) {
         installed = installed.filter((ext) => ext.metadata.type === type)
       }
       res.json(installed)
     } catch (err) {
       logger.error({ err }, 'Failed to get installed extensions')
+      res.status(500).json({ error: (err as Error).message })
+    }
+  })
+
+  // Check for extension updates
+  router.get('/extensions/updates', async (_req: Request, res: Response) => {
+    try {
+      const updates = await manager.checkUpdates()
+      res.json(updates)
+    } catch (err) {
+      logger.error({ err }, 'Failed to check extension updates')
       res.status(500).json({ error: (err as Error).message })
     }
   })

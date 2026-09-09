@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   FaPuzzlePiece,
   FaSync,
@@ -28,10 +29,13 @@ interface ExtensionMetadata {
 }
 
 interface InstalledExtension {
+  id?: string
   metadata: ExtensionMetadata
   enabled: boolean
   isBuiltin?: boolean
   hasUpdate?: boolean
+  latestVersion?: string
+  downloadUrl?: string
 }
 
 interface AvailableExtension {
@@ -61,6 +65,7 @@ interface ExtensionRepository {
 }
 
 const ExtensionsSettings: React.FC = () => {
+  const queryClient = useQueryClient()
   const [activeSubTab, setActiveSubTab] = useState<'installed' | 'available'>('installed')
   const [installed, setInstalled] = useState<InstalledExtension[]>([])
   const [available, setAvailable] = useState<AvailableExtension[]>([])
@@ -150,7 +155,8 @@ const ExtensionsSettings: React.FC = () => {
 
   const handleInstall = async (id: string, name: string, downloadUrl?: string) => {
     setBusy(id, true)
-    const toastId = toast.loading(`Installing ${name}...`)
+    const isUpdate = installed.some((inst) => inst.metadata.id === id)
+    const toastId = toast.loading(isUpdate ? `Updating ${name}...` : `Installing ${name}...`)
     try {
       const res = await fetch(`/api/extensions/install/${id}`, {
         method: 'POST',
@@ -159,14 +165,39 @@ const ExtensionsSettings: React.FC = () => {
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Installation failed')
+        throw new Error(data.error || (isUpdate ? 'Update failed' : 'Installation failed'))
       }
-      toast.success(`${name} installed successfully!`, { id: toastId })
+      toast.success(`${name} ${isUpdate ? 'updated' : 'installed'} successfully!`, { id: toastId })
+      queryClient.invalidateQueries({ queryKey: ['system-notifications'] })
       await Promise.all([fetchInstalled(), fetchAvailable()])
     } catch (err) {
-      toast.error((err as Error).message || 'Installation failed', { id: toastId })
+      toast.error((err as Error).message || (isUpdate ? 'Update failed' : 'Installation failed'), { id: toastId })
     } finally {
       setBusy(id, false)
+    }
+  }
+
+  const handleUpdateAll = async () => {
+    const toUpdate = installed.filter((ext) => ext.hasUpdate)
+    if (toUpdate.length === 0) return
+    const toastId = toast.loading(`Updating ${toUpdate.length} extensions...`)
+    try {
+      for (const ext of toUpdate) {
+        setBusy(ext.metadata.id, true)
+        await fetch(`/api/extensions/install/${ext.metadata.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ downloadUrl: ext.downloadUrl }),
+        })
+        setBusy(ext.metadata.id, false)
+      }
+      toast.success('All extensions updated successfully!', { id: toastId })
+      queryClient.invalidateQueries({ queryKey: ['system-notifications'] })
+      await Promise.all([fetchInstalled(), fetchAvailable()])
+    } catch (err) {
+      toast.error('Failed to update some extensions', { id: toastId })
+    } finally {
+      toUpdate.forEach((ext) => setBusy(ext.metadata.id, false))
     }
   }
 
@@ -199,6 +230,7 @@ const ExtensionsSettings: React.FC = () => {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Reload failed')
       toast.success(`Reloaded ${data.count} extensions`, { id: toastId })
+      queryClient.invalidateQueries({ queryKey: ['system-notifications'] })
       await Promise.all([fetchInstalled(), fetchAvailable(), fetchRepos()])
     } catch (err) {
       toast.error((err as Error).message || 'Reload failed', { id: toastId })
@@ -333,6 +365,10 @@ const ExtensionsSettings: React.FC = () => {
     }
   }
 
+  const updatesCount = useMemo(() => {
+    return installed.filter((ext) => ext.hasUpdate).length
+  }, [installed])
+
   return (
     <div className={styles.container}>
       <div className={styles.headerCard}>
@@ -371,6 +407,22 @@ const ExtensionsSettings: React.FC = () => {
             onClick={() => setActiveSubTab('installed')}
           >
             Installed ({installed.length})
+            {updatesCount > 0 && (
+              <span
+                style={{
+                  marginLeft: '0.45rem',
+                  background: 'rgba(234, 179, 8, 0.2)',
+                  color: '#eab308',
+                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                  borderRadius: '9999px',
+                  padding: '0.1rem 0.45rem',
+                  fontSize: '0.7rem',
+                  fontWeight: 600,
+                }}
+              >
+                {updatesCount} update{updatesCount > 1 ? 's' : ''}
+              </span>
+            )}
           </button>
           <button
             className={`${styles.tabButton} ${activeSubTab === 'available' ? styles.active : ''}`}
@@ -416,6 +468,38 @@ const ExtensionsSettings: React.FC = () => {
         </div>
       </div>
 
+      {activeSubTab === 'installed' && updatesCount > 0 && (
+        <div
+          style={{
+            marginBottom: '1rem',
+            padding: '0.75rem 1rem',
+            borderRadius: '8px',
+            background: 'rgba(234, 179, 8, 0.1)',
+            border: '1px solid rgba(234, 179, 8, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#eab308', fontSize: '0.875rem' }}>
+            <FaSync className="fa-spin" style={{ animationDuration: '4s' }} />
+            <span>
+              <strong>{updatesCount} extension update{updatesCount > 1 ? 's' : ''} available</strong> from enabled repositories.
+            </span>
+          </div>
+          <button
+            className={`${styles.actionBtn} ${styles.btnPrimary}`}
+            style={{ fontSize: '0.75rem', padding: '0.4rem 0.8rem' }}
+            disabled={loading || Object.values(actionLoading).some(Boolean)}
+            onClick={handleUpdateAll}
+          >
+            <FaDownload /> Update All ({updatesCount})
+          </button>
+        </div>
+      )}
+
       {activeSubTab === 'installed' ? (
         <div className={styles.grid}>
           {filteredInstalled.length === 0 ? (
@@ -451,7 +535,7 @@ const ExtensionsSettings: React.FC = () => {
                               border: '1px solid rgba(234, 179, 8, 0.3)',
                             }}
                           >
-                            Update Available
+                            Update Available {ext.latestVersion ? `(v${ext.latestVersion})` : ''}
                           </span>
                         )}
                       </div>
@@ -512,9 +596,9 @@ const ExtensionsSettings: React.FC = () => {
                       {ext.hasUpdate && (
                         <button
                           className={`${styles.actionBtn} ${styles.btnPrimary}`}
-                          onClick={() => handleInstall(meta.id, meta.name)}
+                          onClick={() => handleInstall(meta.id, meta.name, ext.downloadUrl)}
                           disabled={isBusy}
-                          title="Update extension to the latest version"
+                          title={`Update extension to v${ext.latestVersion || 'latest'}`}
                         >
                           <FaSync className={isBusy ? 'fa-spin' : ''} /> Update
                         </button>
