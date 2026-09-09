@@ -21,7 +21,7 @@ Unlike traditional monolithic clients that bake scraping logic into their core s
 - **Shoko Server Integration**: Stream self-hosted anime libraries via Shoko's Virtual File System (VFS), with AniDB-AniList cross-referencing, dynamic dual-audio and subtitle switching, and two-way watch status scrobbling.
 - **Hardware-Accelerated Remuxing (FFmpeg)**: Instant, zero-CPU stream-copy remuxing (MKV &rarr; fMP4) with Intel QuickSync (`vaapi`), AMD GPU, and NVIDIA (`nvenc`) acceleration.
 - **Offline Indexing Cache**: Embedded AniDB, AniList, and MAL cross-reference database allowing massive library imports in seconds with zero third-party rate limits.
-- **Docker & Unraid Ecosystem**: Official Unraid templates, `su-exec` PUID/PGID user mapping, GPU passthrough (`/dev/dri`), and companion FlareSolverr stack via [`Dando_Docker`](https://github.com/ultrawazer/Dando_Docker).
+- **Docker & Unraid Ecosystem**: Official Unraid templates, `su-exec` PUID/PGID user mapping, GPU passthrough (`/dev/dri`), and companion FlareSolverr stack via [`MitarashiDango_Docker`](https://github.com/ultrawazer/MitarashiDango_Docker).
 - **Dynamic Theme Engine**: Runtime CSS variable generator, theme-aware dynamic SVG branding and logo generation, and AniPredict theme styling.
 - **Enhanced Insights & Analytics**: Extended watch analytics and progress metrics for both streaming and local library titles.
 
