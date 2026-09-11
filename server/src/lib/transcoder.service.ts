@@ -23,13 +23,17 @@ export class TranscoderService {
         this.hasFfmpeg = true
         log.info('FFmpeg is detected on the host system')
 
-        // Check Intel VAAPI
-        if (process.platform === 'linux' && fs.existsSync('/dev/dri')) {
+        const envMode = (process.env.HW_ACCEL as HwAccelMode) || 'auto'
+
+        if (envMode === 'software') {
+          this.detectedHwAccel = 'software'
+          log.info('Hardware acceleration: Forced software encoding via HW_ACCEL')
+        } else if (envMode === 'vaapi' || (envMode === 'auto' && process.platform === 'linux' && fs.existsSync('/dev/dri'))) {
           this.detectedHwAccel = 'vaapi'
-          log.info('Hardware acceleration: Intel VAAPI (/dev/dri) detected')
-        } else if (process.env.NVIDIA_VISIBLE_DEVICES || fs.existsSync('/proc/driver/nvidia')) {
+          log.info('Hardware acceleration: Intel/AMD VAAPI (/dev/dri) enabled')
+        } else if (envMode === 'nvenc' || (envMode === 'auto' && (process.env.NVIDIA_VISIBLE_DEVICES || fs.existsSync('/proc/driver/nvidia')))) {
           this.detectedHwAccel = 'nvenc'
-          log.info('Hardware acceleration: NVIDIA NVENC detected')
+          log.info('Hardware acceleration: NVIDIA NVENC enabled')
         } else {
           this.detectedHwAccel = 'software'
           log.info('Hardware acceleration: Software encoding')
@@ -99,10 +103,11 @@ export class TranscoderService {
 
     // Video codec handling
     if (options.transcodeVideo) {
-      if (mode === 'vaapi' && fs.existsSync('/dev/dri/renderD128')) {
+      if (mode === 'vaapi' && (fs.existsSync('/dev/dri/renderD128') || fs.existsSync('/dev/dri'))) {
+        const driNode = fs.existsSync('/dev/dri/renderD128') ? '/dev/dri/renderD128' : '/dev/dri'
         args.push(
           '-vaapi_device',
-          '/dev/dri/renderD128',
+          driNode,
           '-vf',
           'format=nv12,hwupload',
           '-c:v',

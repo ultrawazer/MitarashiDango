@@ -26,18 +26,25 @@ export class LocalMediaController {
 
       const vfsUrl = shokoClient.getVfsStreamUrl(fileId, req.db)
 
-      // Fetch hwaccel setting if present
+      // Fetch hwaccel setting if present, falling back to process.env.HW_ACCEL
       const hwSetting = await SettingsRepository.getByKey(req.db, 'hwaccel_mode')
-      const hwAccel = (hwSetting?.value as HwAccelMode) || 'auto'
+      const hwAccel = (hwSetting?.value as HwAccelMode) || (process.env.HW_ACCEL as HwAccelMode) || 'auto'
 
-      // Check if transcoding/remuxing is requested
+      // Check if transcoding/remuxing is requested.
+      // Default to remuxing for local media unless direct=true is requested,
+      // because local anime is almost always MKV/FLAC which browsers cannot play natively.
+      const isDirectStream = req.query.direct === 'true'
       const shouldRemux =
-        audioIndex !== undefined ||
-        transcodeVideo ||
-        req.query.remux === 'true'
+        !isDirectStream &&
+        transcoderService.getCapabilities().hasFfmpeg &&
+        (
+          audioIndex !== undefined ||
+          transcodeVideo ||
+          req.query.remux !== 'false'
+        )
 
       if (shouldRemux && transcoderService.getCapabilities().hasFfmpeg) {
-        log.info({ fileId, audioIndex, transcodeVideo, hwAccel }, 'Starting FFmpeg remux stream')
+        log.info({ fileId, audioIndex, transcodeVideo, hwAccel, startTime }, 'Starting FFmpeg remux stream')
 
         const remux = transcoderService.streamRemux({
           inputUrl: vfsUrl,
@@ -56,11 +63,24 @@ export class LocalMediaController {
         res.setHeader('Cache-Control', 'no-cache')
         res.setHeader('Connection', 'keep-alive')
 
+        remux.process.on('error', (procErr) => {
+          log.error({ err: procErr, fileId }, 'FFmpeg remux process error')
+          if (!res.headersSent) {
+            res.status(500).send('Remux process error')
+          }
+        })
+
+        remux.stdout.on('error', (err) => {
+          log.warn({ err, fileId }, 'Remux stdout stream error')
+        })
+
         remux.stdout.pipe(res)
 
         req.on('close', () => {
           log.info({ fileId }, 'Client disconnected from remux stream, killing FFmpeg')
-          remux.process.kill('SIGKILL')
+          try {
+            remux.process.kill('SIGKILL')
+          } catch {}
         })
 
         return

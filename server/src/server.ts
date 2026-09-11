@@ -256,6 +256,30 @@ async function main() {
   flareSolverrService.setDb(db)
   await extensionManager.init()
 
+  // Auto-seed missing configuration from environment variables (e.g. Docker / Unraid)
+  const envSeedKeys: [string, string | undefined][] = [
+    ['shoko_url', process.env.SHOKO_URL || (CONFIG.SHOKO_URL && CONFIG.SHOKO_URL !== 'http://localhost' ? CONFIG.SHOKO_URL : undefined)],
+    ['shoko_port', process.env.SHOKO_PORT || (CONFIG.SHOKO_PORT && CONFIG.SHOKO_PORT !== 8111 ? String(CONFIG.SHOKO_PORT) : undefined)],
+    ['shoko_api_key', process.env.SHOKO_API_KEY || CONFIG.SHOKO_API_KEY || undefined],
+    ['hwaccel_mode', process.env.HW_ACCEL],
+    ['flaresolverr_enabled', process.env.FLARESOLVERR_ENABLED],
+    ['flaresolverr_url', process.env.FLARESOLVERR_URL],
+    ['flaresolverr_port', process.env.FLARESOLVERR_PORT],
+  ]
+
+  for (const [key, envVal] of envSeedKeys) {
+    if (envVal !== undefined && envVal !== '') {
+      try {
+        const existing = await SettingsRepository.getByKey(db, key)
+        if (!existing || !existing.value) {
+          await SettingsRepository.upsert(db, key, envVal)
+        }
+      } catch (err) {
+        logger.debug({ err, key }, 'Skipped env seeding for key')
+      }
+    }
+  }
+
   shokoClient.init(db)
   await animeIdMapper.init(db)
 

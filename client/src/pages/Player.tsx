@@ -150,10 +150,12 @@ const Player: React.FC = () => {
 
       if (state.selectedSource.isLocal && state.selectedLink) {
         const baseLink = state.selectedLink.link.split('?')[0]
-        const newLinkUrl =
-          index === 0
-            ? baseLink
-            : `${baseLink}?audioIndex=${index}&remux=true`
+        const params = new URLSearchParams()
+        params.set('audioIndex', String(index))
+        if (currentPos > 0) {
+          params.set('startTime', String(Math.floor(currentPos)))
+        }
+        const newLinkUrl = `${baseLink}?${params.toString()}`
 
         dispatch({
           type: 'SET_STATE',

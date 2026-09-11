@@ -130,11 +130,26 @@ export class SettingsController {
     try {
       const row = await SettingsRepository.getByKey(req.db, req.query.key as string)
       let value = row ? row.value : null
-      if (value === null && req.query.key === 'discordRPCEnabled') {
-        value = 'true'
-      }
-      if (value === null && req.query.key === 'discordRPCHideMature') {
-        value = 'true'
+      if (value === null || value === undefined) {
+        if (req.query.key === 'discordRPCEnabled') {
+          value = 'true'
+        } else if (req.query.key === 'discordRPCHideMature') {
+          value = 'true'
+        } else if (req.query.key === 'shoko_url') {
+          value = process.env.SHOKO_URL || CONFIG.SHOKO_URL || 'http://localhost'
+        } else if (req.query.key === 'shoko_port') {
+          value = process.env.SHOKO_PORT || (CONFIG.SHOKO_PORT ? String(CONFIG.SHOKO_PORT) : '8111')
+        } else if (req.query.key === 'shoko_api_key') {
+          value = process.env.SHOKO_API_KEY || CONFIG.SHOKO_API_KEY || ''
+        } else if (req.query.key === 'hwaccel_mode') {
+          value = process.env.HW_ACCEL || 'auto'
+        } else if (req.query.key === 'flaresolverr_enabled') {
+          value = process.env.FLARESOLVERR_ENABLED || 'false'
+        } else if (req.query.key === 'flaresolverr_url') {
+          value = process.env.FLARESOLVERR_URL || 'http://localhost'
+        } else if (req.query.key === 'flaresolverr_port') {
+          value = process.env.FLARESOLVERR_PORT || '8191'
+        }
       }
       res.json({ value: value })
     } catch {
