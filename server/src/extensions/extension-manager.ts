@@ -51,6 +51,25 @@ export class ExtensionManager {
   }
 
   public async init(): Promise<void> {
+    // Ensure Node can resolve server dependencies (got-scraping, cheerio, axios, etc.)
+    // when requiring external extension bundles loaded from persistent appdata volumes
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Module = require('module')
+      const serverNodeModules = path.resolve(__dirname, '..', '..', 'node_modules')
+      const rootNodeModules = path.resolve(__dirname, '..', '..', '..', 'node_modules')
+      const paths = [serverNodeModules, rootNodeModules]
+      if (process.env.NODE_PATH) {
+        paths.push(...process.env.NODE_PATH.split(path.delimiter))
+      }
+      process.env.NODE_PATH = paths.filter((p) => fs.existsSync(p)).join(path.delimiter)
+      if (typeof Module._initPaths === 'function') {
+        Module._initPaths()
+      }
+    } catch {
+      // ignore
+    }
+
     if (!fs.existsSync(this.extensionsDir)) {
       fs.mkdirSync(this.extensionsDir, { recursive: true })
     }

@@ -259,6 +259,8 @@ export const usePlayerData = (
     }
   }, [playerData, episodeNumber])
 
+  const triedMatureProvidersRef = useRef<Set<string>>(new Set())
+
   useEffect(() => {
     if (showMeta?.isAdult === undefined) return
     const matureProvider =
@@ -276,6 +278,26 @@ export const usePlayerData = (
       dispatch({ type: 'SET_PROVIDER', payload: 'animepahe' })
     }
   }, [showMeta?.isAdult, uiState.selectedProvider, showId])
+
+  useEffect(() => {
+    triedMatureProvidersRef.current.clear()
+  }, [showId, currentEpisode])
+
+  useEffect(() => {
+    if (!showMeta?.isAdult || loadingVideo || !currentEpisode) return
+    const matureProviders = ['wh', 'hn', 'ht', 'op']
+    if (videoError || (videoData && (!videoData.sources || videoData.sources.length === 0))) {
+      triedMatureProvidersRef.current.add(uiState.selectedProvider)
+      const nextProvider = matureProviders.find((p) => !triedMatureProvidersRef.current.has(p))
+      if (nextProvider) {
+        toast.info(
+          `No stream on ${uiState.selectedProvider.toUpperCase()}, trying ${nextProvider.toUpperCase()}...`,
+          { id: 'mature-fallback' }
+        )
+        dispatch({ type: 'SET_PROVIDER', payload: nextProvider })
+      }
+    }
+  }, [showMeta?.isAdult, videoData, videoError, loadingVideo, currentEpisode, uiState.selectedProvider])
 
   const {
     data: videoData,

@@ -28,12 +28,12 @@ export class TranscoderService {
         if (envMode === 'software') {
           this.detectedHwAccel = 'software'
           log.info('Hardware acceleration: Forced software encoding via HW_ACCEL')
+        } else if (envMode === 'nvenc' || (envMode === 'auto' && (process.env.NVIDIA_VISIBLE_DEVICES || fs.existsSync('/proc/driver/nvidia')))) {
+          this.detectedHwAccel = 'nvenc'
+          log.info('Hardware acceleration: NVIDIA NVENC enabled (prioritized)')
         } else if (envMode === 'vaapi' || (envMode === 'auto' && process.platform === 'linux' && fs.existsSync('/dev/dri'))) {
           this.detectedHwAccel = 'vaapi'
           log.info('Hardware acceleration: Intel/AMD VAAPI (/dev/dri) enabled')
-        } else if (envMode === 'nvenc' || (envMode === 'auto' && (process.env.NVIDIA_VISIBLE_DEVICES || fs.existsSync('/proc/driver/nvidia')))) {
-          this.detectedHwAccel = 'nvenc'
-          log.info('Hardware acceleration: NVIDIA NVENC enabled')
         } else {
           this.detectedHwAccel = 'software'
           log.info('Hardware acceleration: Software encoding')

@@ -1,12 +1,14 @@
 const fs = require('fs')
 const path = require('path')
 
-const newVersion = process.argv[2]
+const rawVersion = process.argv[2]
 
-if (!newVersion) {
-  console.error('❌ Provide version like: 1.2.3')
+if (!rawVersion) {
+  console.error('❌ Provide version like: 1.2.3 or v1.2.3')
   process.exit(1)
 }
+
+const newVersion = rawVersion.replace(/^v/, '')
 
 const root = process.cwd()
 
@@ -37,9 +39,19 @@ function updateFile(filePath) {
       updated = true
     }
 
-    if (json.packages && json.packages['']) {
-      json.packages[''].version = newVersion
-      updated = true
+    if (json.packages) {
+      if (json.packages['']) {
+        json.packages[''].version = newVersion
+        updated = true
+      }
+      if (json.packages['client']) {
+        json.packages['client'].version = newVersion
+        updated = true
+      }
+      if (json.packages['server']) {
+        json.packages['server'].version = newVersion
+        updated = true
+      }
     }
 
     if (filePath.endsWith('package.json') && filePath === path.join(root, 'package.json')) {
