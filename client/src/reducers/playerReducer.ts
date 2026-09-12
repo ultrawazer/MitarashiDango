@@ -19,10 +19,10 @@ const getPreferredProvider = (): string => {
     return provider
   }
   const mediaMode = localStorage.getItem('mediaMode')
-  if (mediaMode === 'local' || mediaMode === 'mixed') {
+  if (mediaMode === 'local') {
     return 'shoko'
   }
-  return 'shoko'
+  return 'animepahe'
 }
 
 export const createInitialState = (): PlayerState => ({

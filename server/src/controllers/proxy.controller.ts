@@ -11,6 +11,7 @@ import fs from 'fs'
 import logger from '../logger'
 import { buildCfClearanceCookie, sanitizeCfClearance } from '../utils/cookie.utils'
 import { isSafeExternalUrl } from '../utils/security.utils'
+import { getExtensionContext } from '../utils/request-context'
 
 function firstString(value: unknown): string | undefined {
   if (typeof value === 'string') return value
@@ -47,6 +48,9 @@ export class ProxyController {
     'kwik.pro',
     'animepahe.pw',
     'animepahe.ru',
+    'japaneseasmr.com',
+    'weeabo0.xyz',
+    'weeab0o.xyz',
   ])
   private static readonly GOT_SCRAPING_SUFFIXES = [
     '.uwucdn.top',
@@ -55,6 +59,9 @@ export class ProxyController {
     '.nekostream.site',
     '.nukitashith.top',
     '.aniwatchtv.site',
+    '.japaneseasmr.com',
+    '.weeabo0.xyz',
+    '.weeab0o.xyz',
   ]
   private static readonly HANIME_HOSTS = new Set(['r2.1hanime.com', '1.1hanime.com'])
   private static readonly OPPAI_HOSTS = new Set(['myspacecat.pictures'])
@@ -184,12 +191,18 @@ export class ProxyController {
         if (!headers['Referer']) headers['Referer'] = refererStr || ProxyController.KAA_REFERER
         headers['Origin'] = ProxyController.KAA_ORIGIN
       }
-      if (urlStr.includes('weeabo0.xyz') || urlStr.includes('weeab0o.xyz')) {
+      if (
+        urlStr.includes('weeabo0.xyz') ||
+        urlStr.includes('weeab0o.xyz') ||
+        urlStr.includes('japaneseasmr.com')
+      ) {
         if (!headers['Referer']) headers['Referer'] = refererStr || 'https://japaneseasmr.com/'
-        const jasmrCookieHeader = buildCfClearanceCookie(cookieStr)
+        const jasmrCtx = getExtensionContext('jasmr', req.headers)
+        const effectiveCookie = cookieStr || jasmrCtx.cookie || ''
+        const jasmrCookieHeader = buildCfClearanceCookie(effectiveCookie)
         if (jasmrCookieHeader) headers['Cookie'] = jasmrCookieHeader
-        const jasmrUa = (req.query.ua as string) || ''
-        if (jasmrUa) headers['User-Agent'] = jasmrUa
+        const effectiveUa = (req.query.ua as string) || jasmrCtx.ua || ''
+        if (effectiveUa) headers['User-Agent'] = effectiveUa
       }
       if (req.headers.range) headers['Range'] = req.headers.range as string
 
@@ -276,6 +289,7 @@ export class ProxyController {
             return res.status(resp.statusCode ?? 502).send('Upstream error')
           }
 
+          res.status(resp.statusCode || 200)
           const ct = resp.headers['content-type']
           const isVtt = urlStr.endsWith('.vtt') || urlStr.includes('.vtt?')
           res.set(

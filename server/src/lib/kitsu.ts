@@ -238,6 +238,9 @@ export async function kitsuSearchAnime(options: KitsuSearchOptions = {}): Promis
   if (seasonFilter && seasonFilter !== 'all') filters.push(`filter[season]=${seasonFilter}`)
   if (seasonYear) filters.push(`filter[seasonYear]=${seasonYear}`)
   if (genre) filters.push(`filter[categories]=${encodeURIComponent(genre)}`)
+  if (isAdult === true || format === 'ADULT') {
+    filters.push('filter[ageRating]=R')
+  }
 
   const offset = (page - 1) * perPage
   const path = `/anime?${filters.join('&')}${filters.length ? '&' : ''}sort=${anilistSortToKitsu(
@@ -344,7 +347,7 @@ function normalizeKitsuEntry(
     seasonYear: startDate?.year ?? undefined,
     startDate,
     endDate,
-    isAdult: !!a.nsfw,
+    isAdult: !!a.nsfw || a.ageRating === 'R',
     synonyms: (a.abbreviatedTitles as string[] | undefined) ?? undefined,
     popularity: (a.userCount as number | undefined) ?? undefined,
     favourites: (a.favoritesCount as number | undefined) ?? undefined,

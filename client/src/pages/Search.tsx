@@ -18,6 +18,8 @@ import { usePaginatedSearchAnime, useGenresAndStudios } from '../hooks/useAnimeD
 import { useLowEndMode } from '../contexts/LowEndModeContext'
 import { hideVirtualKeyboard } from '../hooks/useVirtualKeyboard'
 import { useSetting } from '../hooks/useSettings'
+import { useMatureConsent } from '../hooks/useMatureConsent'
+import GenericModal from '../components/common/GenericModal'
 import styles from './Search.module.css'
 
 interface Option {
@@ -152,7 +154,27 @@ export default function Search() {
     14
   )
 
-  const [showMature, setShowMature] = useState(false)
+  const { hasConsent, grant: grantMatureConsent } = useMatureConsent()
+  const [showMatureModal, setShowMatureModal] = useState(false)
+  const [pendingMatureAction, setPendingMatureAction] = useState<(() => void) | null>(null)
+  const showMature = hasConsent
+
+  const handleAcceptMature = () => {
+    grantMatureConsent()
+    setShowMatureModal(false)
+    if (pendingMatureAction) {
+      pendingMatureAction()
+      setPendingMatureAction(null)
+    }
+  }
+
+  const handleDeclineMature = () => {
+    setShowMatureModal(false)
+    setPendingMatureAction(null)
+    if (type === 'ADULT') {
+      setType('ALL')
+    }
+  }
 
   const filteredResults = React.useMemo(() => {
     if (isLocalActive && !searchWebToo) {
@@ -160,7 +182,8 @@ export default function Search() {
     }
 
     let web = results
-    if (provider === 'anilist' && type !== 'ADULT' && !showMature) {
+    const isAdultSearch = type === 'ADULT' || query.trim().toLowerCase() === 'mature'
+    if (provider === 'anilist' && !isAdultSearch && !showMature) {
       web = results.filter((anime) => {
         const isAdult =
           anime.isAdult ||
@@ -256,7 +279,12 @@ export default function Search() {
 
     if (anilistGenres.length > 0) params.set('genres', anilistGenres.join(','))
     if (anilistExclude.length > 0) params.set('excludeGenres', anilistExclude.join(','))
-    if (type !== 'ADULT' && !showMature) params.set('adult', 'false')
+    const isAdultQuery = type === 'ADULT' || query.trim().toLowerCase() === 'mature'
+    if (isAdultQuery) {
+      params.set('adult', 'true')
+    } else if (!showMature) {
+      params.set('adult', 'false')
+    }
 
     params.set('provider', 'anilist')
     if (searchWebToo) params.set('web', 'true')
@@ -336,6 +364,23 @@ export default function Search() {
               </label>
             )}
 
+            <label className={styles.webSearchToggle} title="Include mature (18+) content in search results">
+              <input
+                type="checkbox"
+                checked={hasConsent}
+                onChange={(e) => {
+                  if (e.target.checked && !hasConsent) {
+                    setShowMatureModal(true)
+                    setPendingMatureAction(() => () => handleSearch(1))
+                  } else if (!e.target.checked) {
+                    localStorage.removeItem('agreedToViewMature')
+                    window.location.reload()
+                  }
+                }}
+              />
+              <span>18+ Mature</span>
+            </label>
+
             <Button onClick={() => handleSearch()} className={styles.searchBtn}>
               Search
             </Button>
@@ -355,7 +400,21 @@ export default function Search() {
           <div className={styles.filterGrid}>
             <div className={styles.filterItem}>
               <label>Type</label>
-              <select value={type} onChange={(e) => setType(e.currentTarget.value)}>
+              <select
+                value={type}
+                onChange={(e) => {
+                  const val = e.currentTarget.value
+                  if (val === 'ADULT' && !hasConsent) {
+                    setShowMatureModal(true)
+                    setPendingMatureAction(() => () => {
+                      setType('ADULT')
+                      handleSearch(1)
+                    })
+                    return
+                  }
+                  setType(val)
+                }}
+              >
                 {typeOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
@@ -650,6 +709,43 @@ export default function Search() {
             </button>
           </div>
         </div>
+      )}
+      {showMatureModal && (
+        <GenericModal
+          isOpen={showMatureModal}
+          title="Content Warning"
+          onClose={handleDeclineMature}
+        >
+          <div style={{ padding: 'var(--space-4)', textAlign: 'center' }}>
+            <p>This section contains mature content intended for adult audiences.</p>
+            <p>
+              By proceeding, you confirm that you are <strong>18 years of age or older</strong> (or
+              the age of majority in your jurisdiction) and wish to view this content.
+            </p>
+            <p
+              style={{
+                fontSize: 'var(--font-size-xs)',
+                color: 'var(--text-secondary)',
+                marginTop: 'var(--space-4)',
+              }}
+            >
+              You can reset this preference at any time in the <strong>Settings</strong> page.
+            </p>
+            <div
+              style={{
+                marginTop: 'var(--space-4)',
+                display: 'flex',
+                gap: 'var(--space-2-5)',
+                justifyContent: 'center',
+              }}
+            >
+              <Button variant="secondary" onClick={handleDeclineMature}>
+                Go Back
+              </Button>
+              <Button onClick={handleAcceptMature}>I'm 18+, Continue</Button>
+            </div>
+          </div>
+        </GenericModal>
       )}
     </div>
   )

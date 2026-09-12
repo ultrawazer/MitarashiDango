@@ -283,22 +283,6 @@ export const usePlayerData = (
     triedMatureProvidersRef.current.clear()
   }, [showId, currentEpisode])
 
-  useEffect(() => {
-    if (!showMeta?.isAdult || loadingVideo || !currentEpisode) return
-    const matureProviders = ['wh', 'hn', 'ht', 'op']
-    if (videoError || (videoData && (!videoData.sources || videoData.sources.length === 0))) {
-      triedMatureProvidersRef.current.add(uiState.selectedProvider)
-      const nextProvider = matureProviders.find((p) => !triedMatureProvidersRef.current.has(p))
-      if (nextProvider) {
-        toast.info(
-          `No stream on ${uiState.selectedProvider.toUpperCase()}, trying ${nextProvider.toUpperCase()}...`,
-          { id: 'mature-fallback' }
-        )
-        dispatch({ type: 'SET_PROVIDER', payload: nextProvider })
-      }
-    }
-  }, [showMeta?.isAdult, videoData, videoError, loadingVideo, currentEpisode, uiState.selectedProvider])
-
   const {
     data: videoData,
     isLoading: loadingVideo,
@@ -317,6 +301,22 @@ export const usePlayerData = (
       !!currentEpisode &&
       !(uiState.showMeta?.isAdult === true && !options?.hasMatureConsent),
   })
+
+  useEffect(() => {
+    if (!showMeta?.isAdult || loadingVideo || !currentEpisode) return
+    const matureProviders = ['wh', 'hn', 'ht', 'op']
+    if (videoError || (videoData && (!videoData.videoSources || videoData.videoSources.length === 0))) {
+      triedMatureProvidersRef.current.add(uiState.selectedProvider)
+      const nextProvider = matureProviders.find((p) => !triedMatureProvidersRef.current.has(p))
+      if (nextProvider) {
+        toast.info(
+          `No stream on ${uiState.selectedProvider.toUpperCase()}, trying ${nextProvider.toUpperCase()}...`,
+          { id: 'mature-fallback' }
+        )
+        dispatch({ type: 'SET_PROVIDER', payload: nextProvider })
+      }
+    }
+  }, [showMeta?.isAdult, videoData, videoError, loadingVideo, currentEpisode, uiState.selectedProvider])
 
   const loadingDetails = false
 

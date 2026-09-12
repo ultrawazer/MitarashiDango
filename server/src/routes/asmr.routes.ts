@@ -92,6 +92,30 @@ export function createAsmrRouter(
     }
   )
 
+  function proxyAsmrTracks(rawTracks: any[], ctx?: { cookie?: string; ua?: string }) {
+    if (!Array.isArray(rawTracks)) return []
+    return rawTracks.map((t: any) => {
+      if (!t?.link || typeof t.link !== 'string') return t
+      const link = t.link
+      const isProxied = link.startsWith('/api/proxy')
+      if (!isProxied && (link.startsWith('http://') || link.startsWith('https://'))) {
+        const referer = t.headers?.Referer || 'https://japaneseasmr.com/'
+        let proxiedLink = `/api/proxy?url=${encodeURIComponent(link)}&referer=${encodeURIComponent(referer)}`
+        if (ctx?.cookie) {
+          proxiedLink += `&cookie=${encodeURIComponent(ctx.cookie)}`
+        }
+        if (ctx?.ua) {
+          proxiedLink += `&ua=${encodeURIComponent(ctx.ua)}`
+        }
+        return {
+          ...t,
+          link: proxiedLink,
+        }
+      }
+      return t
+    })
+  }
+
   router.get(
     '/asmr/work/:rj',
     makeCacheMiddleware(apiCache, (req) => `route-asmr-work-${req.params.rj}`, 1800),
@@ -112,7 +136,7 @@ export function createAsmrRouter(
         res.json({
           rjCode,
           description: episodes?.description || '',
-          tracks: streams?.[0]?.links || [],
+          tracks: proxyAsmrTracks(streams?.[0]?.links || [], ctx),
           images,
           chapters,
         })
@@ -131,7 +155,7 @@ export function createAsmrRouter(
                 return res.json({
                   rjCode,
                   description: episodes?.description || '',
-                  tracks: streams?.[0]?.links || [],
+                  tracks: proxyAsmrTracks(streams?.[0]?.links || [], retryCtx),
                   images,
                   chapters,
                 })

@@ -87,7 +87,14 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
   }, [volume])
 
   const track = tracks[trackIndex]
-  const trackLink = track?.link
+  const rawTrackLink = track?.link
+  const isProxied = rawTrackLink?.startsWith('/api/proxy')
+  const trackLink =
+    rawTrackLink &&
+    !isProxied &&
+    (rawTrackLink.startsWith('http://') || rawTrackLink.startsWith('https://'))
+      ? `/api/proxy?url=${encodeURIComponent(rawTrackLink)}&referer=${encodeURIComponent(track?.headers?.Referer || 'https://japaneseasmr.com/')}`
+      : rawTrackLink
   const trackIsHls = track?.hls
   const hasImages = images.length > 0
 
@@ -108,6 +115,13 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
     setIsPlaying(false)
     destroyHls()
 
+    const handleError = () => {
+      const err = audio.error
+      console.error('[AsmrPlayer] Audio error:', err?.code, err?.message, trackLink)
+      setIsPlaying(false)
+    }
+    audio.addEventListener('error', handleError)
+
     if (trackIsHls) {
       if (window.Hls && window.Hls.isSupported()) {
         const hls = new window.Hls({ enableWorker: true })
@@ -126,6 +140,7 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
     audio.play().catch(() => setIsPlaying(false))
 
     return () => {
+      audio.removeEventListener('error', handleError)
       destroyHls()
       audio.removeAttribute('src')
     }
