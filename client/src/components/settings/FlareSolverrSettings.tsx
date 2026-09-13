@@ -18,12 +18,14 @@ const FlareSolverrSettings: React.FC = () => {
   const { data: enabledSetting, isLoading: isEnabledLoading } = useSetting('flaresolverr_enabled')
   const { data: urlSetting } = useSetting('flaresolverr_url')
   const { data: portSetting } = useSetting('flaresolverr_port')
+  const { data: maxTimeoutSetting } = useSetting('flaresolverr_max_timeout')
 
   const updateSetting = useUpdateSetting()
 
   const [enabled, setEnabled] = useState<boolean>(false)
   const [url, setUrl] = useState<string>('http://localhost')
   const [port, setPort] = useState<string>('8191')
+  const [maxTimeout, setMaxTimeout] = useState<string>('60')
   const [testing, setTesting] = useState<boolean>(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
 
@@ -45,6 +47,16 @@ const FlareSolverrSettings: React.FC = () => {
     }
   }, [portSetting])
 
+  useEffect(() => {
+    if (maxTimeoutSetting !== undefined && maxTimeoutSetting !== null && String(maxTimeoutSetting).trim() !== '') {
+      // Stored as milliseconds, display as seconds
+      const ms = parseInt(String(maxTimeoutSetting), 10)
+      if (!isNaN(ms) && ms > 0) {
+        setMaxTimeout(String(Math.round(ms / 1000)))
+      }
+    }
+  }, [maxTimeoutSetting])
+
   const handleToggle = async (checked: boolean) => {
     setEnabled(checked)
     try {
@@ -62,6 +74,10 @@ const FlareSolverrSettings: React.FC = () => {
       await Promise.all([
         updateSetting.mutateAsync({ key: 'flaresolverr_url', value: url.trim() }),
         updateSetting.mutateAsync({ key: 'flaresolverr_port', value: port.trim() }),
+        updateSetting.mutateAsync({
+          key: 'flaresolverr_max_timeout',
+          value: String(Math.max(1, parseInt(maxTimeout, 10) || 60) * 1000),
+        }),
       ])
       toast.success('FlareSolverr connection settings saved!')
     } catch (err) {
@@ -200,6 +216,38 @@ const FlareSolverrSettings: React.FC = () => {
               value={port}
               onChange={(e) => setPort(e.target.value)}
               placeholder="8191"
+              style={{
+                width: '100%',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color, rgba(255,255,255,0.15))',
+                background: 'var(--bg-primary, rgba(0,0,0,0.3))',
+                color: 'var(--text-primary, #fff)',
+                fontSize: '0.875rem',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+
+          <div style={{ flex: '1 1 120px', minWidth: 0 }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                marginBottom: '0.25rem',
+              }}
+            >
+              Max Timeout (seconds)
+            </label>
+            <input
+              type="number"
+              min="5"
+              max="300"
+              value={maxTimeout}
+              onChange={(e) => setMaxTimeout(e.target.value)}
+              placeholder="60"
               style={{
                 width: '100%',
                 padding: '0.5rem 0.75rem',

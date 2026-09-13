@@ -328,6 +328,22 @@ export class ShokoProvider implements Provider {
         }
       })
 
+      // Parse file duration
+      let fileDurationSeconds: number | undefined
+      const rawDuration = (file as any).Duration || (file as any).MediaInfo?.Duration
+      if (typeof rawDuration === 'string') {
+        const parts = rawDuration.split(':')
+        if (parts.length === 3) {
+          const secs = parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2])
+          if (Number.isFinite(secs) && secs > 0) fileDurationSeconds = Math.round(secs)
+        }
+      } else if (typeof rawDuration === 'number' && rawDuration > 0) {
+        fileDurationSeconds = Math.round(rawDuration)
+      }
+      if (!fileDurationSeconds && (ep as any).AniDB?.LengthSeconds) {
+        fileDurationSeconds = (ep as any).AniDB.LengthSeconds
+      }
+
       // Construct video source
       const streamUrl = `/api/local-media/stream/${fileId}`
       const videoSource: VideoSource = {
@@ -335,6 +351,7 @@ export class ShokoProvider implements Provider {
         type: 'player',
         actualEpisodeNumber: cleanNum,
         isLocal: true,
+        duration: fileDurationSeconds,
         links: [
           {
             resolutionStr: 'Original (Local)',

@@ -10,40 +10,81 @@ export type HwAccelMode = 'auto' | 'vaapi' | 'nvenc' | 'software'
 
 export class TranscoderService {
   private hasFfmpeg = false
+  private ffmpegPath = 'ffmpeg'
   private detectedHwAccel: HwAccelMode = 'software'
+  private nvencVerified = false
 
   constructor() {
     this.detectCapabilities()
   }
 
   private detectCapabilities(): void {
+    // 1. Try system FFmpeg first
     try {
       const check = spawnSync('ffmpeg', ['-version'], { encoding: 'utf-8', timeout: 3000 })
       if (!check.error && check.status === 0) {
         this.hasFfmpeg = true
-        log.info('FFmpeg is detected on the host system')
-
-        const envMode = (process.env.HW_ACCEL as HwAccelMode) || 'auto'
-
-        if (envMode === 'software') {
-          this.detectedHwAccel = 'software'
-          log.info('Hardware acceleration: Forced software encoding via HW_ACCEL')
-        } else if (envMode === 'nvenc' || (envMode === 'auto' && (process.env.NVIDIA_VISIBLE_DEVICES || fs.existsSync('/proc/driver/nvidia')))) {
-          this.detectedHwAccel = 'nvenc'
-          log.info('Hardware acceleration: NVIDIA NVENC enabled (prioritized)')
-        } else if (envMode === 'vaapi' || (envMode === 'auto' && process.platform === 'linux' && fs.existsSync('/dev/dri'))) {
-          this.detectedHwAccel = 'vaapi'
-          log.info('Hardware acceleration: Intel/AMD VAAPI (/dev/dri) enabled')
-        } else {
-          this.detectedHwAccel = 'software'
-          log.info('Hardware acceleration: Software encoding')
-        }
-      } else {
-        this.hasFfmpeg = false
-        log.warn('FFmpeg is NOT detected in PATH. Streaming will rely on direct container playback.')
+        this.ffmpegPath = 'ffmpeg'
+        log.info('FFmpeg detected on system PATH')
       }
     } catch {
-      this.hasFfmpeg = false
+      // system ffmpeg not found
+    }
+
+    // 2. Fallback to ffmpeg-static npm package (for Windows/macOS dev environments)
+    if (!this.hasFfmpeg) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const ffmpegStaticPath = require('ffmpeg-static') as string
+        if (ffmpegStaticPath && fs.existsSync(ffmpegStaticPath)) {
+          const check = spawnSync(ffmpegStaticPath, ['-version'], { encoding: 'utf-8', timeout: 3000 })
+          if (!check.error && check.status === 0) {
+            this.hasFfmpeg = true
+            this.ffmpegPath = ffmpegStaticPath
+            log.info({ path: ffmpegStaticPath }, 'FFmpeg detected via ffmpeg-static package')
+          }
+        }
+      } catch {
+        // ffmpeg-static not installed, that's fine
+      }
+    }
+
+    if (!this.hasFfmpeg) {
+      log.warn('FFmpeg is NOT detected. Streaming will rely on direct container playback.')
+    } else {
+      // Detect hardware acceleration
+      const envMode = (process.env.HW_ACCEL as HwAccelMode) || 'auto'
+
+      if (envMode === 'software') {
+        this.detectedHwAccel = 'software'
+        log.info('Hardware acceleration: Forced software encoding via HW_ACCEL')
+      } else if (envMode === 'nvenc' || (envMode === 'auto' && (process.env.NVIDIA_VISIBLE_DEVICES || fs.existsSync('/proc/driver/nvidia')))) {
+        // Verify NVENC actually works before committing
+        this.detectedHwAccel = 'nvenc'
+        try {
+          const nvencCheck = spawnSync(
+            this.ffmpegPath,
+            ['-hide_banner', '-f', 'lavfi', '-i', 'nullsrc=s=16x16:d=0.1', '-c:v', 'h264_nvenc', '-f', 'null', '-'],
+            { encoding: 'utf-8', timeout: 5000 }
+          )
+          if (!nvencCheck.error && nvencCheck.status === 0) {
+            this.nvencVerified = true
+            log.info('Hardware acceleration: NVIDIA NVENC verified and enabled')
+          } else {
+            this.nvencVerified = false
+            log.warn('NVIDIA NVENC detected but verification failed, will use stream-copy fallback')
+          }
+        } catch {
+          this.nvencVerified = false
+          log.warn('NVIDIA NVENC verification threw, will use stream-copy fallback')
+        }
+      } else if (envMode === 'vaapi' || (envMode === 'auto' && process.platform === 'linux' && fs.existsSync('/dev/dri'))) {
+        this.detectedHwAccel = 'vaapi'
+        log.info('Hardware acceleration: Intel/AMD VAAPI (/dev/dri) enabled')
+      } else {
+        this.detectedHwAccel = 'software'
+        log.info('Hardware acceleration: Software encoding')
+      }
     }
 
     try {
@@ -83,6 +124,9 @@ export class TranscoderService {
     const mode = options.hwAccel && options.hwAccel !== 'auto' ? options.hwAccel : this.detectedHwAccel
     const args: string[] = ['-hide_banner', '-loglevel', 'error']
 
+    // Probe limits: cap input analysis to 5MB/5s for fast startup
+    args.push('-probesize', '5000000', '-analyzeduration', '5000000')
+
     // Fast seek if startTime specified
     if (options.startTime && options.startTime > 0) {
       args.push('-ss', options.startTime.toString())
@@ -115,8 +159,13 @@ export class TranscoderService {
           '-b:v',
           '5M'
         )
-      } else if (mode === 'nvenc') {
+      } else if (mode === 'nvenc' && this.nvencVerified) {
         args.push('-c:v', 'h264_nvenc', '-preset', 'p4', '-b:v', '5M')
+      } else if (mode === 'nvenc' && !this.nvencVerified) {
+        // NVENC detected but not verified — fall back to stream-copy
+        // (video is almost certainly H.264/HEVC which browsers can play)
+        log.info('NVENC not verified, falling back to video stream-copy')
+        args.push('-c:v', 'copy')
       } else {
         args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22')
       }
@@ -139,7 +188,7 @@ export class TranscoderService {
 
     log.info({ args: args.join(' ') }, 'Spawning FFmpeg stream process')
 
-    const proc = spawn('ffmpeg', args, {
+    const proc = spawn(this.ffmpegPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -170,6 +219,10 @@ export class TranscoderService {
       '-hide_banner',
       '-loglevel',
       'error',
+      '-probesize',
+      '5000000',
+      '-analyzeduration',
+      '5000000',
       '-i',
       inputUrl,
       '-map',
@@ -179,7 +232,7 @@ export class TranscoderService {
       'pipe:1',
     ]
 
-    const proc = spawn('ffmpeg', args, {
+    const proc = spawn(this.ffmpegPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 

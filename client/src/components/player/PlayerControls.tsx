@@ -76,6 +76,8 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   const { showSettings, showVolumeSlider } = state
   const { setShowSettings, setShowVolumeSlider } = actions
 
+  const effectiveDuration = state.duration > 0 ? state.duration : (selectedSource?.duration || 0)
+
   const settingsRef = React.useRef<HTMLDivElement>(null)
   const settingsBtnRef = React.useRef<HTMLButtonElement>(null)
   const volumeRef = React.useRef<HTMLDivElement>(null)
@@ -121,23 +123,25 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
     const video = refs.videoRef.current
     if (!video) return
 
+    const effDuration = state.duration > 0 ? state.duration : (selectedSource?.duration || 0)
+
     const handleTimeUpdate = () => {
       if (!state.isScrubbing) {
         const time = video.currentTime
         currentTimeRef.current = time
-        const percent = (time / state.duration) * 100 || 0
+        const percent = effDuration > 0 ? (time / effDuration) * 100 : 0
         if (watchedBarRef.current) watchedBarRef.current.style.width = `${percent}%`
         if (thumbRef.current) thumbRef.current.style.left = `${percent}%`
         if (timeDisplayRef.current) {
-          timeDisplayRef.current.innerText = `${actions.formatTime(time)} / ${actions.formatTime(state.duration)}`
+          timeDisplayRef.current.innerText = `${actions.formatTime(time)} / ${actions.formatTime(effDuration)}`
         }
       }
     }
 
     const handleProgress = () => {
-      if (video.buffered.length > 0) {
+      if (video.buffered.length > 0 && effDuration > 0) {
         const bufferedEnd = video.buffered.end(video.buffered.length - 1)
-        const percent = (bufferedEnd / state.duration) * 100 || 0
+        const percent = (bufferedEnd / effDuration) * 100 || 0
         if (bufferedBarRef.current) bufferedBarRef.current.style.width = `${percent}%`
       }
     }
@@ -152,7 +156,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
       video.removeEventListener('timeupdate', handleTimeUpdate)
       video.removeEventListener('progress', handleProgress)
     }
-  }, [refs.videoRef, state.isScrubbing, state.duration, actions])
+  }, [refs.videoRef, state.isScrubbing, state.duration, selectedSource?.duration, actions])
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!refs.videoRef.current) return
@@ -163,24 +167,51 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   }
 
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const effDuration = state.duration > 0 ? state.duration : (selectedSource?.duration || 0)
     if (
       !refs.videoRef.current ||
       !refs.progressBarRef.current ||
-      isNaN(state.duration) ||
-      state.duration === 0
+      isNaN(effDuration) ||
+      effDuration === 0
     )
       return
     const rect = refs.progressBarRef.current.getBoundingClientRect()
     const percent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-    refs.videoRef.current.currentTime = percent * state.duration
+    const targetTime = percent * effDuration
+
+    if (selectedSource?.isLocal && selectedLink) {
+      const video = refs.videoRef.current
+      let isBuffered = false
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (targetTime >= video.buffered.start(i) && targetTime <= video.buffered.end(i)) {
+          isBuffered = true
+          break
+        }
+      }
+      if (!isBuffered) {
+        const baseLink = selectedLink.link.split('?')[0]
+        const search = selectedLink.link.includes('?') ? selectedLink.link.split('?')[1] : ''
+        const params = new URLSearchParams(search)
+        params.set('startTime', String(Math.floor(targetTime)))
+        const newLinkUrl = `${baseLink}?${params.toString()}`
+        onSourceChange(selectedSource, {
+          ...selectedLink,
+          link: newLinkUrl,
+        })
+        return
+      }
+    }
+
+    refs.videoRef.current.currentTime = targetTime
     actions.sendProgressUpdate(false, true)
   }
 
   const handleProgressBarMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!refs.progressBarRef.current || !state.duration) return
+    const effDuration = state.duration > 0 ? state.duration : (selectedSource?.duration || 0)
+    if (!refs.progressBarRef.current || !effDuration) return
     const rect = refs.progressBarRef.current.getBoundingClientRect()
     const percent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-    const time = percent * state.duration
+    const time = percent * effDuration
     actions.setHoverTime({ time, position: e.clientX - rect.left })
   }
 
@@ -234,22 +265,23 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
 
   useEffect(() => {
     const handleDocumentMouseMove = (e: MouseEvent) => {
+      const effDuration = state.duration > 0 ? state.duration : (selectedSource?.duration || 0)
       if (
         !state.isScrubbing ||
         !refs.videoRef.current ||
         !refs.progressBarRef.current ||
-        !state.duration
+        !effDuration
       )
         return
       const rect = refs.progressBarRef.current.getBoundingClientRect()
       const percent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-      const scrubTime = percent * state.duration
+      const scrubTime = percent * effDuration
       refs.videoRef.current.currentTime = scrubTime
-      const percent100 = (scrubTime / state.duration) * 100 || 0
+      const percent100 = (scrubTime / effDuration) * 100 || 0
       if (watchedBarRef.current) watchedBarRef.current.style.width = `${percent100}%`
       if (thumbRef.current) thumbRef.current.style.left = `${percent100}%`
       if (timeDisplayRef.current) {
-        timeDisplayRef.current.innerText = `${actions.formatTime(scrubTime)} / ${actions.formatTime(state.duration)}`
+        timeDisplayRef.current.innerText = `${actions.formatTime(scrubTime)} / ${actions.formatTime(effDuration)}`
       }
       actions.setHoverTime({ time: scrubTime, position: e.clientX - rect.left })
     }
@@ -340,12 +372,12 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
             </div>
           )}
           <div className={styles.progressBar}>
-            {state.duration > 0 && player.state.currentSkipInterval && (
+            {effectiveDuration > 0 && player.state.currentSkipInterval && (
               <div
                 className={`${styles.skipSegment} ${styles[player.state.currentSkipInterval.skip_type]} `}
                 style={{
-                  left: `${(player.state.currentSkipInterval.start_time / state.duration) * 100}% `,
-                  width: `${((player.state.currentSkipInterval.end_time - player.state.currentSkipInterval.start_time) / state.duration) * 100}% `,
+                  left: `${(player.state.currentSkipInterval.start_time / effectiveDuration) * 100}% `,
+                  width: `${((player.state.currentSkipInterval.end_time - player.state.currentSkipInterval.start_time) / effectiveDuration) * 100}% `,
                 }}
               ></div>
             )}
@@ -354,9 +386,9 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
             <div className={styles.thumb} ref={thumbRef} onMouseDown={handleThumbMouseDown}></div>
 
             {skipIntervals.map((interval) => {
-              const startPercent = (interval.start_time / state.duration) * 100
+              const startPercent = effectiveDuration > 0 ? (interval.start_time / effectiveDuration) * 100 : 0
               const widthPercent =
-                ((interval.end_time - interval.start_time) / state.duration) * 100
+                effectiveDuration > 0 ? ((interval.end_time - interval.start_time) / effectiveDuration) * 100 : 0
               return (
                 <div
                   key={interval.skip_id}

@@ -34,6 +34,9 @@
     "ws": "^8.18.0",
     "xml2js": "^0.6.2"
   },
+  "optionalDependencies": {
+    "ffmpeg-static": "^5.2.0"
+  },
   "devDependencies": {
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",

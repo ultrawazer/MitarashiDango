@@ -192,6 +192,14 @@ export class ProxyController {
         headers['Origin'] = ProxyController.KAA_ORIGIN
       }
       if (
+        urlStr.includes('hstorage.xyz') ||
+        urlStr.includes('watchhentai.net') ||
+        refererStr.includes('watchhentai.net')
+      ) {
+        if (!headers['Referer']) headers['Referer'] = refererStr || 'https://watchhentai.net/'
+        headers['Origin'] = 'https://watchhentai.net'
+      }
+      if (
         urlStr.includes('weeabo0.xyz') ||
         urlStr.includes('weeab0o.xyz') ||
         urlStr.includes('japaneseasmr.com')
@@ -275,36 +283,75 @@ export class ProxyController {
         if (ProxyController.isGotScrapingHost(urlStr)) {
           if (req.headers.range) headers['Range'] = req.headers.range as string
 
-          const resp = await gotScraping({
-            url: urlStr,
-            method: 'GET',
-            headers,
-            responseType: 'buffer',
-            timeout: { request: 30000 },
-            followRedirect: true,
-            throwHttpErrors: false,
-          })
-
-          if (resp.statusCode !== 200 && resp.statusCode !== 206) {
-            return res.status(resp.statusCode ?? 502).send('Upstream error')
-          }
-
-          res.status(resp.statusCode || 200)
-          const ct = resp.headers['content-type']
+          // For subtitle files, use buffer mode (small payloads)
           const isVtt = urlStr.endsWith('.vtt') || urlStr.includes('.vtt?')
-          res.set(
-            'Content-Type',
-            isVtt ? 'text/vtt; charset=utf-8' : ct || 'application/octet-stream'
-          )
-          const cl = resp.headers['content-length']
-          if (cl) res.set('Content-Length', cl)
-          const cr = resp.headers['content-range']
-          if (cr) res.set('Content-Range', cr)
-          const ar = resp.headers['accept-ranges']
-          if (ar) res.set('Accept-Ranges', ar)
+          if (isVtt) {
+            const resp = await gotScraping({
+              url: urlStr,
+              method: 'GET',
+              headers,
+              responseType: 'buffer',
+              timeout: { request: 30000 },
+              followRedirect: true,
+              throwHttpErrors: false,
+            })
 
-          res.set('Access-Control-Allow-Origin', '*')
-          res.send(resp.body)
+            if (resp.statusCode !== 200 && resp.statusCode !== 206) {
+              return res.status(resp.statusCode ?? 502).send('Upstream error')
+            }
+
+            res.status(resp.statusCode || 200)
+            res.set('Content-Type', 'text/vtt; charset=utf-8')
+            const cl = resp.headers['content-length']
+            if (cl) res.set('Content-Length', cl)
+            res.set('Access-Control-Allow-Origin', '*')
+            res.send(resp.body)
+          } else {
+            // For media streams, use streaming mode to avoid buffering entire response
+            const upstream = gotScraping.stream({
+              url: urlStr,
+              method: 'GET',
+              headers,
+              timeout: { request: 30000 },
+              followRedirect: true,
+              throwHttpErrors: false,
+            })
+
+            upstream.on('response', (upstreamRes: any) => {
+              const statusCode = upstreamRes.statusCode || 200
+              if (statusCode !== 200 && statusCode !== 206) {
+                res.status(statusCode).send('Upstream error')
+                upstream.destroy()
+                return
+              }
+
+              res.status(statusCode)
+              const ct = upstreamRes.headers['content-type']
+              const isTsSegment = urlStr.includes('.ts') || urlStr.endsWith('.ts')
+              res.set('Content-Type', isTsSegment ? 'video/mp2t' : (ct || 'application/octet-stream'))
+              const cl = upstreamRes.headers['content-length']
+              if (cl) res.set('Content-Length', cl)
+              const cr = upstreamRes.headers['content-range']
+              if (cr) res.set('Content-Range', cr)
+              const ar = upstreamRes.headers['accept-ranges']
+              if (ar) res.set('Accept-Ranges', ar)
+              res.set('Access-Control-Allow-Origin', '*')
+            })
+
+            upstream.on('error', (err: Error) => {
+              if (!res.headersSent) {
+                logger.error({ url: urlStr, error: err.message }, '[proxy] gotScraping stream error')
+                res.status(502).send('Upstream stream error')
+              }
+            })
+
+            // Pipe the upstream stream directly to the client response
+            upstream.pipe(res)
+
+            res.on('close', () => {
+              upstream.destroy()
+            })
+          }
         } else {
           // Plain media streams (yt-mp4, etc.)
           // Proxy using axios streaming (got-scraping does not support stream/buffer for these hosts)
@@ -322,10 +369,11 @@ export class ProxyController {
           }
           res.status(status)
           const isVtt = urlStr.endsWith('.vtt') || urlStr.includes('.vtt?')
+          const isTsSegment = urlStr.includes('.ts') || urlStr.endsWith('.ts')
           const ct = firstString(axiosResp.headers['content-type'])
           res.set(
             'Content-Type',
-            isVtt ? 'text/vtt; charset=utf-8' : ct || 'application/octet-stream'
+            isVtt ? 'text/vtt; charset=utf-8' : isTsSegment ? 'video/mp2t' : ct || 'application/octet-stream'
           )
           const cl = firstString(axiosResp.headers['content-length'])
           if (cl) res.set('Content-Length', cl)

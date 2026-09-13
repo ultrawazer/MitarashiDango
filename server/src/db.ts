@@ -21,6 +21,9 @@ export class DatabaseWrapper {
         fs.mkdirSync(dir, { recursive: true })
       }
       const db = new DatabaseSync(dbPath)
+      db.exec('PRAGMA journal_mode = WAL;')
+      db.exec('PRAGMA busy_timeout = 5000;')
+      db.exec('PRAGMA synchronous = NORMAL;')
       return new DatabaseWrapper(dbPath, db)
     } catch (e) {
       logger.error({ err: e }, `Failed to initialize database at ${dbPath}`)

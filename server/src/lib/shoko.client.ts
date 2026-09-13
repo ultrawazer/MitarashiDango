@@ -153,9 +153,21 @@ export class ShokoClient {
   private customConfig: Partial<ShokoConfig> | null = null
   private db: DatabaseWrapper | null = null
 
+  // Pre-built AniDB ID → Shoko Series ID map for O(1) lookups
+  private anidbToShokoMap = new Map<number, number>()
+  // Negative cache: AniDB IDs confirmed not in Shoko (cleared hourly)
+  private anidbNegativeCache = new Set<number>()
+  private negativeCacheInterval: ReturnType<typeof setInterval> | null = null
+
   public init(db: DatabaseWrapper): void {
     this.db = db
     this.loadConfigFromDb(db)
+
+    // Clear negative cache every hour
+    if (this.negativeCacheInterval) clearInterval(this.negativeCacheInterval)
+    this.negativeCacheInterval = setInterval(() => {
+      this.anidbNegativeCache.clear()
+    }, 60 * 60 * 1000)
   }
 
   public setDb(db: DatabaseWrapper): void {
@@ -417,33 +429,82 @@ export class ShokoClient {
       return null
     }
   }
+  /**
+   * Pre-build AniDB ID → Shoko Series ID map by paginating through all Shoko series.
+   * Called on server boot and periodically (every 60 minutes).
+   */
+  public async buildAnidbIdMap(db?: DatabaseWrapper): Promise<void> {
+    try {
+      const { client } = this.getClient(db)
+      const newMap = new Map<number, number>()
+      let page = 1
+      const pageSize = 100
+      let hasMore = true
+
+      while (hasMore) {
+        const res = await client.get('/api/v3/Series', {
+          params: {
+            page,
+            pageSize,
+            includeDataFrom: 'AniDB',
+          },
+        })
+
+        const data = res.data
+        const list: ShokoSeries[] = Array.isArray(data) ? data : data?.List || []
+
+        for (const s of list) {
+          const anidbId = s.IDs?.AniDB || s.AniDB?.ID
+          if (anidbId && s.IDs?.ID) {
+            newMap.set(anidbId, s.IDs.ID)
+          }
+        }
+
+        hasMore = list.length === pageSize
+        page++
+      }
+
+      this.anidbToShokoMap = newMap
+      log.info({ count: newMap.size }, 'Built AniDB → Shoko ID map')
+    } catch (err) {
+      log.error({ err }, 'Failed to build AniDB → Shoko ID map')
+    }
+  }
 
   public async getSeriesByAnidbId(anidbId: number, db?: DatabaseWrapper): Promise<ShokoSeries | null> {
     try {
-      const { client } = this.getClient(db)
+      // 1. Check negative cache — skip if we know this AniDB ID is not in Shoko
+      if (this.anidbNegativeCache.has(anidbId)) {
+        return null
+      }
 
-      // 1. Direct Shoko v5 AniDB lookup
+      // 2. O(1) in-memory map lookup
+      const cachedShokoId = this.anidbToShokoMap.get(anidbId)
+      if (cachedShokoId) {
+        return await this.getSeriesById(cachedShokoId, db)
+      }
+
+      // 3. Direct Shoko API lookup (for shows added after last map build)
+      const { client } = this.getClient(db)
       try {
         const directRes = await client.get(`/api/v3/Series/AniDB/${anidbId}`)
         if (directRes.data?.ShokoID) {
+          // Add to map for future lookups
+          this.anidbToShokoMap.set(anidbId, directRes.data.ShokoID)
           return await this.getSeriesById(directRes.data.ShokoID, db)
         }
       } catch (directErr: any) {
-        if (directErr?.response?.status !== 404) {
-          log.warn({ err: directErr?.message, anidbId }, 'Direct Shoko AniDB series lookup failed, falling back')
+        if (directErr?.response?.status === 404) {
+          // Confirmed not in Shoko — cache the negative result
+          this.anidbNegativeCache.add(anidbId)
+          return null
         }
+        log.warn({ err: directErr?.message, anidbId }, 'Direct Shoko AniDB series lookup failed')
       }
 
-      // 2. Fallback: Query series with anidbID
-      const res = await client.get('/api/v3/Series', {
-        params: {
-          pageSize: 100,
-          includeDataFrom: 'AniDB',
-        },
-      })
-      const list: ShokoSeries[] = Array.isArray(res.data) ? res.data : res.data?.List || []
-      const found = list.find((s) => s.IDs?.AniDB === anidbId || s.AniDB?.ID === anidbId)
-      return found || null
+      // Not found via any method
+      this.anidbNegativeCache.add(anidbId)
+      return null
     } catch (err) {
       log.error({ err, anidbId }, 'Failed to find Shoko series by AniDB ID')
       return null

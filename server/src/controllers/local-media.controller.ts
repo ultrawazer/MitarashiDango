@@ -10,6 +10,58 @@ import logger from '../logger'
 const log = logger.child({ module: 'LocalMediaController' })
 
 export class LocalMediaController {
+  /**
+   * Checks if a local file needs FFmpeg remuxing for browser playback.
+   * Returns false for MP4/WebM with browser-compatible codecs (H.264/HEVC + AAC/MP3/Opus).
+   * Returns true for MKV/AVI/FLV containers or incompatible audio codecs (FLAC, DTS, TrueHD).
+   */
+  private async needsRemuxForBrowser(fileId: number, db: any): Promise<boolean> {
+    try {
+      const { client } = (shokoClient as any).getClient(db)
+      const res = await client.get(`/api/v3/File/${fileId}`, {
+        params: { includeMediaInfo: true },
+        timeout: 5000,
+      })
+      const file = res.data
+      if (!file) return true // unknown file, remux to be safe
+
+      // Check container from file path or media info
+      const locations = file.Locations || []
+      const relativePath = locations[0]?.RelativePath || ''
+      const ext = relativePath.split('.').pop()?.toLowerCase() || ''
+
+      // Containers that browsers can play natively
+      const browserSafeContainers = new Set(['mp4', 'm4v', 'webm', 'mov'])
+      if (!browserSafeContainers.has(ext)) {
+        // MKV, AVI, FLV, etc. — need remuxing
+        return true
+      }
+
+      // For MP4/WebM, check audio codec compatibility
+      const mediaInfo = file.MediaInfo
+      if (mediaInfo) {
+        const audioStreams = mediaInfo.Audio || mediaInfo.MediaStreams?.Audio || []
+        const incompatibleAudioCodecs = new Set([
+          'flac', 'dts', 'dts-hd', 'truehd', 'pcm', 'pcm_s16le', 'pcm_s24le',
+          'pcm_s32le', 'pcm_f32le', 'eac3',
+        ])
+
+        for (const audio of audioStreams) {
+          const codec = (audio.Codec || audio.Format || '').toLowerCase()
+          if (incompatibleAudioCodecs.has(codec)) {
+            return true // has incompatible audio, needs remux
+          }
+        }
+      }
+
+      // MP4/WebM with compatible codecs — no remux needed
+      return false
+    } catch (err) {
+      log.warn({ err: (err as Error).message, fileId }, 'Failed to check file media info, defaulting to remux')
+      return true // unknown, remux to be safe
+    }
+  }
+
   public streamVideo = async (req: Request, res: Response): Promise<void> => {
     try {
       const paramFileId = Array.isArray(req.params.fileId) ? req.params.fileId[0] : req.params.fileId
@@ -31,19 +83,24 @@ export class LocalMediaController {
       const hwAccel = (hwSetting?.value as HwAccelMode) || (process.env.HW_ACCEL as HwAccelMode) || 'auto'
 
       // Check if transcoding/remuxing is requested.
-      // Default to remuxing for local media unless direct=true is requested,
-      // because local anime is almost always MKV/FLAC which browsers cannot play natively.
       const isDirectStream = req.query.direct === 'true'
-      const shouldRemux =
-        !isDirectStream &&
-        transcoderService.getCapabilities().hasFfmpeg &&
-        (
-          audioIndex !== undefined ||
-          transcodeVideo ||
-          req.query.remux !== 'false'
-        )
+      const hasFfmpeg = transcoderService.getCapabilities().hasFfmpeg
 
-      if (shouldRemux && transcoderService.getCapabilities().hasFfmpeg) {
+      // Smart container/codec detection: only remux when the browser can't play natively
+      let shouldRemux = false
+      if (!isDirectStream && hasFfmpeg) {
+        if (audioIndex !== undefined || transcodeVideo) {
+          // Explicit user request for audio track switch or transcode
+          shouldRemux = true
+        } else if (req.query.remux === 'false') {
+          shouldRemux = false
+        } else {
+          // Auto-detect: check file container and codecs via Shoko media info
+          shouldRemux = await this.needsRemuxForBrowser(fileId, req.db)
+        }
+      }
+
+      if (shouldRemux && hasFfmpeg) {
         log.info({ fileId, audioIndex, transcodeVideo, hwAccel, startTime }, 'Starting FFmpeg remux stream')
 
         const remux = transcoderService.streamRemux({

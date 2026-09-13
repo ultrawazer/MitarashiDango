@@ -6,6 +6,7 @@ export interface FlareSolverrConfig {
   enabled: boolean
   url: string
   port: string | number
+  maxTimeout: number
 }
 
 export interface FlareSolverrSolution {
@@ -26,12 +27,36 @@ export interface FlareSolverrResponse {
   solution?: FlareSolverrSolution
 }
 
+// Known Cloudflare-protected providers and their auth URLs
+const CLOUDFLARE_PROVIDERS: { extensionId: string; authUrl: string }[] = [
+  { extensionId: 'animepahe', authUrl: 'https://animepahe.pw' },
+  { extensionId: 'jasmr', authUrl: 'https://japaneseasmr.com' },
+]
+
 export class FlareSolverrService {
   private db?: DatabaseWrapper
   private credentialCache = new Map<string, { cookie: string; ua: string; expiresAt: number }>()
+  private preWarmInterval: ReturnType<typeof setInterval> | null = null
+
+  private cachedBaseUrl: string = (process.env.FLARESOLVERR_URL || 'http://localhost:8191').trim()
+  private cachedEnabled: boolean = process.env.FLARESOLVERR_ENABLED === 'true'
+  private cachedMaxTimeout: number = 60000
 
   public setDb(db: DatabaseWrapper): void {
     this.db = db
+    this.getConfig(db).catch(() => {})
+  }
+
+  public getCachedBaseUrl(): string {
+    return this.cachedBaseUrl
+  }
+
+  public isEnabledSync(): boolean {
+    return this.cachedEnabled || process.env.FLARESOLVERR_ENABLED === 'true'
+  }
+
+  public getCachedMaxTimeout(): number {
+    return this.cachedMaxTimeout
   }
 
   public async isEnabled(customDb?: DatabaseWrapper): Promise<boolean> {
@@ -40,13 +65,17 @@ export class FlareSolverrService {
       try {
         const row = await SettingsRepository.getByKey(d, 'flaresolverr_enabled')
         if (row && typeof row.value === 'string' && row.value.trim() !== '') {
-          return row.value === 'true'
+          const val = row.value === 'true'
+          this.cachedEnabled = val
+          return val
         }
       } catch {
         // fallback to env
       }
     }
-    return process.env.FLARESOLVERR_ENABLED === 'true'
+    const val = process.env.FLARESOLVERR_ENABLED === 'true'
+    this.cachedEnabled = val
+    return val
   }
 
   public async getUrl(customDb?: DatabaseWrapper): Promise<string> {
@@ -79,13 +108,42 @@ export class FlareSolverrService {
     return (process.env.FLARESOLVERR_PORT || '8191').trim()
   }
 
+  public async getMaxTimeout(customDb?: DatabaseWrapper): Promise<number> {
+    const d = customDb || this.db
+    if (d) {
+      try {
+        const row = await SettingsRepository.getByKey(d, 'flaresolverr_max_timeout')
+        if (row && typeof row.value === 'string' && row.value.trim() !== '') {
+          const parsed = parseInt(row.value.trim(), 10)
+          if (!isNaN(parsed) && parsed > 0) {
+            this.cachedMaxTimeout = parsed
+            return parsed
+          }
+        }
+      } catch {
+        // fallback to env
+      }
+    }
+    const envVal = process.env.FLARESOLVERR_MAX_TIMEOUT
+    if (envVal) {
+      const parsed = parseInt(envVal, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        this.cachedMaxTimeout = parsed
+        return parsed
+      }
+    }
+    this.cachedMaxTimeout = 60000
+    return 60000 // default 60 seconds
+  }
+
   public async getConfig(customDb?: DatabaseWrapper): Promise<FlareSolverrConfig> {
-    const [enabled, url, port] = await Promise.all([
+    const [enabled, url, port, maxTimeout] = await Promise.all([
       this.isEnabled(customDb),
       this.getUrl(customDb),
       this.getPort(customDb),
+      this.getMaxTimeout(customDb),
     ])
-    return { enabled, url, port }
+    return { enabled, url, port, maxTimeout }
   }
 
   public async getBaseUrl(customDb?: DatabaseWrapper, customUrl?: string, customPort?: string | number): Promise<string> {
@@ -102,8 +160,10 @@ export class FlareSolverrService {
       if (!parsed.port && port) {
         parsed.port = String(port)
       }
+      this.cachedBaseUrl = parsed.origin
       return parsed.origin
     } catch {
+      this.cachedBaseUrl = `${rawUrl}:${port}`
       return `${rawUrl}:${port}`
     }
   }
@@ -175,7 +235,8 @@ export class FlareSolverrService {
   }> {
     const baseUrl = await this.getBaseUrl(customDb)
     const endpoint = `${baseUrl}/v1`
-    const maxTimeout = options?.maxTimeout || 60000
+    const configuredTimeout = await this.getMaxTimeout(customDb)
+    const maxTimeout = options?.maxTimeout || configuredTimeout
 
     const payload: Record<string, unknown> = {
       cmd: 'request.get',
@@ -247,8 +308,9 @@ export class FlareSolverrService {
       return { success: false, error: 'FlareSolverr is not enabled' }
     }
 
-    logger.info({ extensionId, authUrl }, 'Invoking FlareSolverr to solve Cloudflare challenge')
-    const res = await this.solve(authUrl, { maxTimeout: 60000 }, customDb)
+    const configuredTimeout = await this.getMaxTimeout(customDb)
+    logger.info({ extensionId, authUrl, maxTimeout: configuredTimeout }, 'Invoking FlareSolverr to solve Cloudflare challenge')
+    const res = await this.solve(authUrl, { maxTimeout: configuredTimeout }, customDb)
     if (!res.success || !res.cookieHeader || !res.userAgent) {
       logger.warn({ extensionId, err: res.error }, 'FlareSolverr challenge solve failed')
       return {
@@ -294,6 +356,79 @@ export class FlareSolverrService {
       this.credentialCache.delete(extensionId.toLowerCase())
     } else {
       this.credentialCache.clear()
+    }
+  }
+
+  /**
+   * Fire-and-forget background solve — logs result but does not block callers.
+   */
+  public backgroundSolveAndCache(
+    extensionId: string,
+    authUrl: string,
+    customDb?: DatabaseWrapper
+  ): void {
+    this.solveAndCache(extensionId, authUrl, customDb)
+      .then((result) => {
+        if (result.success) {
+          logger.info({ extensionId }, 'Background FlareSolverr solve succeeded, cookies cached')
+        } else {
+          logger.warn({ extensionId, error: result.error }, 'Background FlareSolverr solve failed')
+        }
+      })
+      .catch((err) => {
+        logger.error({ extensionId, err: (err as Error).message }, 'Background FlareSolverr solve threw')
+      })
+  }
+
+  /**
+   * Pre-warm FlareSolverr cookies for known Cloudflare-protected providers.
+   * Called on server boot and periodically (every 90 minutes).
+   */
+  public async preWarmProviders(customDb?: DatabaseWrapper): Promise<void> {
+    const isEnabled = await this.isEnabled(customDb)
+    if (!isEnabled) {
+      logger.info('FlareSolverr is disabled, skipping pre-warm')
+      return
+    }
+
+    logger.info('Pre-warming FlareSolverr cookies for Cloudflare-protected providers...')
+
+    for (const provider of CLOUDFLARE_PROVIDERS) {
+      // Skip if already cached and not expired
+      const existing = this.getCachedCredentials(provider.extensionId)
+      if (existing) {
+        logger.info({ extensionId: provider.extensionId }, 'FlareSolverr cookies already cached, skipping pre-warm')
+        continue
+      }
+
+      // Fire-and-forget each provider solve so they run concurrently
+      this.backgroundSolveAndCache(provider.extensionId, provider.authUrl, customDb)
+    }
+  }
+
+  /**
+   * Start periodic pre-warming (every 90 minutes).
+   * Cookie TTL is 2 hours, so 90 min gives 30 min safety margin.
+   */
+  public startPeriodicPreWarm(customDb?: DatabaseWrapper): void {
+    if (this.preWarmInterval) {
+      clearInterval(this.preWarmInterval)
+    }
+
+    const INTERVAL_MS = 90 * 60 * 1000 // 90 minutes
+    this.preWarmInterval = setInterval(() => {
+      this.preWarmProviders(customDb).catch((err) => {
+        logger.warn({ err: (err as Error).message }, 'Periodic FlareSolverr pre-warm failed')
+      })
+    }, INTERVAL_MS)
+
+    logger.info('FlareSolverr periodic pre-warm scheduled every 90 minutes')
+  }
+
+  public stopPeriodicPreWarm(): void {
+    if (this.preWarmInterval) {
+      clearInterval(this.preWarmInterval)
+      this.preWarmInterval = null
     }
   }
 }

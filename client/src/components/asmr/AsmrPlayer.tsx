@@ -122,22 +122,50 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
     }
     audio.addEventListener('error', handleError)
 
+    audio.volume = volumeRef.current
+
     if (trackIsHls) {
       if (window.Hls && window.Hls.isSupported()) {
         const hls = new window.Hls({ enableWorker: true })
         hlsRef.current = hls
         hls.loadSource(trackLink)
         hls.attachMedia(audio)
+
+        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+          audio.play().catch(() => setIsPlaying(false))
+        })
+
+        hls.on(window.Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
+          if (data?.details?.totalduration && Number.isFinite(data.details.totalduration)) {
+            setDuration(data.details.totalduration)
+          }
+        })
+
+        hls.on(window.Hls.Events.ERROR, (_event: any, data: any) => {
+          if (data?.fatal) {
+            switch (data.type) {
+              case window.Hls.ErrorTypes.NETWORK_ERROR:
+                hls.startLoad()
+                break
+              case window.Hls.ErrorTypes.MEDIA_ERROR:
+                hls.recoverMediaError()
+                break
+              default:
+                destroyHls()
+                break
+            }
+          }
+        })
       } else {
         audio.src = trackLink
+        audio.load()
+        audio.play().catch(() => setIsPlaying(false))
       }
     } else {
       audio.src = trackLink
+      audio.load()
+      audio.play().catch(() => setIsPlaying(false))
     }
-
-    audio.load()
-    audio.volume = volumeRef.current
-    audio.play().catch(() => setIsPlaying(false))
 
     return () => {
       audio.removeEventListener('error', handleError)
@@ -490,7 +518,14 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
       onPlay={() => setIsPlaying(true)}
       onPause={() => setIsPlaying(false)}
       onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-      onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+      onDurationChange={(e) => {
+        const d = e.currentTarget.duration
+        if (Number.isFinite(d) && d > 0) setDuration(d)
+      }}
+      onLoadedMetadata={(e) => {
+        const d = e.currentTarget.duration
+        if (Number.isFinite(d) && d > 0) setDuration(d)
+      }}
       onProgress={(e) => {
         const a = e.currentTarget
         if (a.buffered.length > 0) setBufferedEnd(a.buffered.end(a.buffered.length - 1))

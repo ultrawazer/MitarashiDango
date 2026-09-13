@@ -279,10 +279,22 @@ export class DataController {
           (activeProviderKey === 'animepahe' ? 'https://animepahe.pw' : undefined)
 
         if (authUrl && (await flareSolverrService.isEnabled(req.db))) {
+          logger.info(
+            { provider: activeProviderKey, authUrl },
+            'Invoking FlareSolverr to solve Cloudflare challenge for video streams'
+          )
           const solved = await flareSolverrService.solveAndCache(activeProviderKey, authUrl, req.db)
           if (solved.success && provider) {
             try {
-              const retryContext = getExtensionContext(activeProviderKey, req.headers)
+              const fsUrl = await flareSolverrService.getBaseUrl(req.db)
+              const fsTimeout = await flareSolverrService.getMaxTimeout(req.db)
+              const retryContext = {
+                ...getExtensionContext(activeProviderKey, req.headers),
+                cookie: solved.cookie,
+                ua: solved.ua,
+                flaresolverrUrl: fsUrl,
+                flaresolverrTimeout: fsTimeout,
+              }
               const urls = await provider.getStreamUrls(
                 showId,
                 req.query.episodeNumber as string,
@@ -291,7 +303,7 @@ export class DataController {
               )
               return res.json(urls || [])
             } catch (retryErr) {
-              logger.warn({ err: retryErr }, 'Retry after FlareSolverr solve failed')
+              logger.warn({ err: retryErr }, 'Retry getStreamUrls after FlareSolverr solve failed')
             }
           }
         }
@@ -301,6 +313,7 @@ export class DataController {
           provider: activeProviderKey,
           name: (provider as any)?.metadata?.name,
           authUrl,
+          solvingInBackground: false,
         })
       }
       logger.error({ err: e, provider: req.query.provider }, 'Provider video fetch failed')
@@ -347,7 +360,15 @@ export class DataController {
             const solved = await flareSolverrService.solveAndCache('animepahe', 'https://animepahe.pw', req.db)
             if (solved.success && animepaheProvider) {
               try {
-                const retryContext = getExtensionContext('animepahe', req.headers)
+                const fsUrl = await flareSolverrService.getBaseUrl(req.db)
+                const fsTimeout = await flareSolverrService.getMaxTimeout(req.db)
+                const retryContext = {
+                  ...getExtensionContext('animepahe', req.headers),
+                  cookie: solved.cookie,
+                  ua: solved.ua,
+                  flaresolverrUrl: fsUrl,
+                  flaresolverrTimeout: fsTimeout,
+                }
                 const data = await animepaheProvider.getEpisodes(
                   showId,
                   req.query.mode as 'sub' | 'dub',

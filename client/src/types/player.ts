@@ -104,6 +104,7 @@ export interface VideoSource {
   type?: 'player' | 'iframe'
   sandbox?: string
   actualEpisodeNumber?: string
+  duration?: number
 }
 
 export interface SkipInterval {

@@ -309,11 +309,13 @@ export const usePlayerData = (
       triedMatureProvidersRef.current.add(uiState.selectedProvider)
       const nextProvider = matureProviders.find((p) => !triedMatureProvidersRef.current.has(p))
       if (nextProvider) {
-        toast.info(
+        toast(
           `No stream on ${uiState.selectedProvider.toUpperCase()}, trying ${nextProvider.toUpperCase()}...`,
-          { id: 'mature-fallback' }
+          { id: 'mature-fallback', icon: 'ℹ️' }
         )
         dispatch({ type: 'SET_PROVIDER', payload: nextProvider })
+      } else if (triedMatureProvidersRef.current.size >= matureProviders.length) {
+        toast.error('No streams found across all mature providers.', { id: 'mature-exhausted' })
       }
     }
   }, [showMeta?.isAdult, videoData, videoError, loadingVideo, currentEpisode, uiState.selectedProvider])

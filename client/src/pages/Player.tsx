@@ -108,6 +108,7 @@ const Player: React.FC = () => {
     episodeCount: state.episodes.length || undefined,
     sourceType: state.selectedSource?.type,
     showMeta: memoizedShowMeta,
+    knownDuration: state.selectedSource?.duration || (state.showMeta?.episodeDuration ? Number(state.showMeta.episodeDuration) * 60 : undefined),
   })
   const { refs, actions } = player
 
@@ -1258,10 +1259,13 @@ const Player: React.FC = () => {
     if (!videoElement || state.selectedSource?.type === 'iframe') return
 
     const handleThresholds = () => {
-      const duration = videoElement.duration
+      const rawDur = videoElement.duration
+      const duration = (rawDur && Number.isFinite(rawDur) && rawDur > 0)
+        ? rawDur
+        : (state.selectedSource?.duration || 0)
       const currentTime = videoElement.currentTime
 
-      if (!duration || Number.isNaN(duration)) {
+      if (!duration || !Number.isFinite(duration) || duration <= 0) {
         setShowNextEpisodePrompt(false)
         setHasReachedEpisodeEnd(false)
         return

@@ -8,6 +8,7 @@ interface VideoPlayerProps {
   episodeNumber?: string
   episodeCount?: number
   sourceType?: string
+  knownDuration?: number
   showMeta?: {
     name?: string
     thumbnail?: string
@@ -25,6 +26,7 @@ const useVideoPlayer = ({
   episodeNumber,
   episodeCount,
   sourceType,
+  knownDuration,
   showMeta,
 }: VideoPlayerProps) => {
   const queryClient = useQueryClient()
@@ -63,7 +65,13 @@ const useVideoPlayer = ({
     }
   })
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [duration, setDuration] = useState(0)
+  const [duration, setDuration] = useState(() => (knownDuration && knownDuration > 0 ? knownDuration : 0))
+
+  useEffect(() => {
+    if (knownDuration && knownDuration > 0) {
+      setDuration((prev) => (!Number.isFinite(prev) || prev === 0 ? knownDuration : prev))
+    }
+  }, [knownDuration])
   const [showControls, setShowControls] = useState(true)
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [hoverTime, setHoverTime] = useState<{ time: number; position: number | null }>({
@@ -523,9 +531,16 @@ const useVideoPlayer = ({
   }, [sourceType, sendProgressUpdate])
 
   const onLoadedMetadata = useCallback(() => {
-    setDuration(videoRef.current?.duration || 0)
+    const rawDuration = videoRef.current?.duration
+    if (rawDuration && Number.isFinite(rawDuration) && rawDuration > 0) {
+      setDuration(rawDuration)
+    } else if (knownDuration && knownDuration > 0) {
+      setDuration(knownDuration)
+    } else {
+      setDuration(0)
+    }
     syncPlaybackRate()
-  }, [syncPlaybackRate])
+  }, [syncPlaybackRate, knownDuration])
   const onVolumeChange = useCallback(() => {
     if (videoRef.current) {
       const newMuted = videoRef.current.muted

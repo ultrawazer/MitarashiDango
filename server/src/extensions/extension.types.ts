@@ -101,6 +101,7 @@ export interface VideoSource {
   type?: 'player' | 'iframe'
   actualEpisodeNumber?: string
   iframeUrl?: string
+  duration?: number
 }
 
 export interface EpisodeDetail {

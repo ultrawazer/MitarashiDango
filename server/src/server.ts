@@ -297,6 +297,17 @@ async function main() {
 
   checkAnilistStatus().catch(() => {})
 
+  // Pre-warm FlareSolverr cookies in background (non-blocking)
+  flareSolverrService.preWarmProviders(db).catch((err) => {
+    logger.warn({ err: (err as Error).message }, 'FlareSolverr boot pre-warm failed')
+  })
+  flareSolverrService.startPeriodicPreWarm(db)
+
+  // Build AniDB → Shoko ID map in background for fast lookups
+  shokoClient.buildAnidbIdMap(db).catch((err) => {
+    logger.warn({ err: (err as Error).message }, 'Shoko AniDB ID map build failed on boot')
+  })
+
   await runSyncSequence(db)
 
   if (!fs.existsSync(CONFIG.LOCAL_MANIFEST_PATH)) {
@@ -340,12 +351,21 @@ async function main() {
     }
   }, 6 * 60 * 60 * 1000)
 
+  // Refresh Shoko AniDB → Shoko ID map every 60 minutes
+  const shokoMapInterval = setInterval(() => {
+    shokoClient.buildAnidbIdMap(db).catch((err) => {
+      logger.warn({ err: (err as Error).message }, 'Periodic Shoko AniDB ID map refresh failed')
+    })
+  }, 60 * 60 * 1000)
+
   const shutdown = async (signal?: string) => {
     if (isShuttingDown) return
     isShuttingDown = true
     stopDiscovery()
     clearInterval(syncInterval)
     clearInterval(offlineDbInterval)
+    clearInterval(shokoMapInterval)
+    flareSolverrService.stopPeriodicPreWarm()
     discordRPCService.disconnect()
     discordGatewayService.disconnect()
     await watcher.close()

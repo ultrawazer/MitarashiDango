@@ -21,6 +21,9 @@ export const fetchApi = async (url: string) => {
     const errorMsg = typeof data.error === 'string' ? data.error : ''
 
     if (response.status === 403 && errorMsg === 'AUTH_REQUIRED') {
+      if (data.solvingInBackground === true) {
+        throw new Error('SOLVING_IN_BACKGROUND')
+      }
       const providerId = (typeof data.provider === 'string' ? data.provider : '') || 'unknown'
       const authPayload: ExtensionAuthPayload = {
         extensionId: providerId,

@@ -428,17 +428,17 @@ export class AnimeIdMapper {
       log.info(`Found ${parsedEntries.length} mapped entries to save to SQLite...`)
 
       // Recreate table cleanly so we avoid legacy primary key constraints
-      db.serialize(() => {
-        db.run('DROP TABLE IF EXISTS anime_id_map')
-        this.ensureTable(db)
+      db.run('DROP TABLE IF EXISTS anime_id_map')
+      this.ensureTable(db)
 
-        const stmt = db.prepare(
-          'INSERT INTO anime_id_map (anidb_id, anilist_id, mal_id, title, thumbnail, type, genres) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        )
+      const stmt = db.prepare(
+        'INSERT INTO anime_id_map (anidb_id, anilist_id, mal_id, title, thumbnail, type, genres) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
 
-        const CHUNK_SIZE = 500
-        for (let i = 0; i < parsedEntries.length; i += CHUNK_SIZE) {
-          const chunk = parsedEntries.slice(i, i + CHUNK_SIZE)
+      const CHUNK_SIZE = 1000
+      for (let i = 0; i < parsedEntries.length; i += CHUNK_SIZE) {
+        const chunk = parsedEntries.slice(i, i + CHUNK_SIZE)
+        db.serialize(() => {
           for (const entry of chunk) {
             stmt.run(
               entry.anidbId,
@@ -450,8 +450,10 @@ export class AnimeIdMapper {
               entry.genres || null
             )
           }
-        }
-      })
+        })
+        // Yield to the event loop so HTTP requests, media streaming, and timers are never blocked
+        await new Promise((resolve) => setImmediate(resolve))
+      }
 
       // Reload in-memory cache
       this.loadCache(db)

@@ -1168,7 +1168,24 @@ const Tv: React.FC = () => {
         </GenericModal>
       )}
 
-      {!details && (
+      {detailsLoading && !details && (
+        <div
+          style={{
+            minHeight: '60vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '1rem',
+            color: 'var(--text-secondary, #aaa)',
+          }}
+        >
+          <FaSpinner className={styles.spinner} style={{ fontSize: '2.5rem', color: 'var(--primary-color, #ff4081)' }} />
+          <p style={{ fontSize: '1.1rem' }}>Loading title details...</p>
+        </div>
+      )}
+
+      {!details && !detailsLoading && (
         <>
           <header className={styles.header}>
             <h1 className={styles.pageTitle}>
