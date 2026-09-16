@@ -278,7 +278,7 @@ export class DataController {
           (provider as any)?.metadata?.authUrl ||
           (activeProviderKey === 'animepahe' ? 'https://animepahe.pw' : undefined)
 
-        if (authUrl && (await flareSolverrService.isEnabled(req.db))) {
+        if (authUrl && (await flareSolverrService.isEnabled(req.db)) && flareSolverrService.canAttemptSolve(activeProviderKey)) {
           logger.info(
             { provider: activeProviderKey, authUrl },
             'Invoking FlareSolverr to solve Cloudflare challenge for video streams'
@@ -301,10 +301,14 @@ export class DataController {
                 req.query.mode as 'sub' | 'dub',
                 retryContext
               )
+              flareSolverrService.recordSolveSuccess(activeProviderKey)
               return res.json(urls || [])
             } catch (retryErr) {
               logger.warn({ err: retryErr }, 'Retry getStreamUrls after FlareSolverr solve failed')
+              flareSolverrService.recordSolveFailure(activeProviderKey)
             }
+          } else {
+            flareSolverrService.recordSolveFailure(activeProviderKey)
           }
         }
 
@@ -356,7 +360,7 @@ export class DataController {
         }
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
-          if (await flareSolverrService.isEnabled(req.db)) {
+          if ((await flareSolverrService.isEnabled(req.db)) && flareSolverrService.canAttemptSolve('animepahe')) {
             const solved = await flareSolverrService.solveAndCache('animepahe', 'https://animepahe.pw', req.db)
             if (solved.success && animepaheProvider) {
               try {
@@ -376,10 +380,14 @@ export class DataController {
                   retryContext?.cookie,
                   retryContext
                 )
+                flareSolverrService.recordSolveSuccess('animepahe')
                 return res.json(data || { episodes: [] })
               } catch (retryErr) {
                 logger.warn({ err: retryErr }, 'Retry getEpisodes after FlareSolverr solve failed')
+                flareSolverrService.recordSolveFailure('animepahe')
               }
+            } else {
+              flareSolverrService.recordSolveFailure('animepahe')
             }
           }
           return res.status(403).json({

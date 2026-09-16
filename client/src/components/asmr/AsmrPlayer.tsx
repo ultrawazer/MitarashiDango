@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   FaPlay,
@@ -86,6 +86,24 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
     volumeRef.current = volume
   }, [volume])
 
+  const sanitizedImages = useMemo(() => {
+    const set = new Set<string>()
+    const result: string[] = []
+    for (const img of images) {
+      if (!img || typeof img !== 'string') continue
+      const isProxied = img.startsWith('/api/proxy')
+      const proxied =
+        !isProxied && (img.startsWith('http://') || img.startsWith('https://'))
+          ? `/api/proxy?url=${encodeURIComponent(img)}&referer=${encodeURIComponent('https://japaneseasmr.com/')}`
+          : img
+      if (!set.has(proxied)) {
+        set.add(proxied)
+        result.push(proxied)
+      }
+    }
+    return result
+  }, [images])
+
   const track = tracks[trackIndex]
   const rawTrackLink = track?.link
   const isProxied = rawTrackLink?.startsWith('/api/proxy')
@@ -96,7 +114,7 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
       ? `/api/proxy?url=${encodeURIComponent(rawTrackLink)}&referer=${encodeURIComponent(track?.headers?.Referer || 'https://japaneseasmr.com/')}`
       : rawTrackLink
   const trackIsHls = track?.hls
-  const hasImages = images.length > 0
+  const hasImages = sanitizedImages.length > 0
 
   const destroyHls = useCallback(() => {
     if (hlsRef.current) {
@@ -132,7 +150,10 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
         hls.attachMedia(audio)
 
         hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-          audio.play().catch(() => setIsPlaying(false))
+          audio.play().catch((err) => {
+            console.warn('[AsmrPlayer] Autoplay prevented:', err)
+            setIsPlaying(false)
+          })
         })
 
         hls.on(window.Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
@@ -142,7 +163,9 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
         })
 
         hls.on(window.Hls.Events.ERROR, (_event: any, data: any) => {
+          console.warn('[AsmrPlayer] HLS error:', data?.type, data?.details, data?.fatal)
           if (data?.fatal) {
+            console.error('[AsmrPlayer] Fatal HLS error encountered:', data)
             switch (data.type) {
               case window.Hls.ErrorTypes.NETWORK_ERROR:
                 hls.startLoad()
@@ -189,7 +212,7 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
 
   useEffect(() => {
     setImageIndex(0)
-  }, [images])
+  }, [sanitizedImages])
 
   useEffect(() => {
     if (!expanded) return
@@ -208,7 +231,7 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
       const audio = audioRef.current
       const cur = audio ? audio.currentTime : 0
       const dur = audio ? audio.duration || 0 : 0
-      const poster = images[0] || ''
+      const poster = sanitizedImages[0] || ''
       fetch('/api/discord/asmr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -217,7 +240,7 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
           trackLabel,
           isPlaying: playing,
           thumbnail: poster,
-          thumbnails: images,
+          thumbnails: sanitizedImages,
           currentTime: cur,
           duration: dur,
           isAdult: !!isAdult,
@@ -231,7 +254,7 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
         body: JSON.stringify({ sessionId: sessionIdRef.current }),
       }).catch(() => {})
     },
-    [title, tracks, trackIndex, images, isAdult, rjCode]
+    [title, tracks, trackIndex, sanitizedImages, isAdult, rjCode]
   )
 
   useEffect(() => {
@@ -314,13 +337,13 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
         else onExpandedChange(false)
         return
       }
-      if (!showArt || images.length < 2) return
+      if (!showArt || sanitizedImages.length < 2) return
       if (e.key === 'ArrowLeft') setImageIndex((i) => Math.max(0, i - 1))
-      if (e.key === 'ArrowRight') setImageIndex((i) => Math.min(images.length - 1, i + 1))
+      if (e.key === 'ArrowRight') setImageIndex((i) => Math.min(sanitizedImages.length - 1, i + 1))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [expanded, showArt, images.length, showChapterPanel, onExpandedChange])
+  }, [expanded, showArt, sanitizedImages.length, showChapterPanel, onExpandedChange])
 
   const togglePlay = () => {
     const audio = audioRef.current
@@ -544,8 +567,8 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
     )
   }
 
-  const safeIndex = Math.min(imageIndex, Math.max(0, images.length - 1))
-  const currentSrc = images[safeIndex]
+  const safeIndex = Math.min(imageIndex, Math.max(0, sanitizedImages.length - 1))
+  const currentSrc = sanitizedImages[safeIndex]
   const currentPending = showArt && hasImages && !!currentSrc && !loadedImages.has(currentSrc)
 
   return createPortal(
@@ -563,8 +586,8 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
                   className={styles.sliderTrack}
                   style={{ transform: `translateX(-${safeIndex * 100}%)` }}
                 >
-                  {images.map((src) => (
-                    <div key={src} className={styles.slide}>
+                  {sanitizedImages.map((src, idx) => (
+                    <div key={`${src}-${idx}`} className={styles.slide}>
                       <img
                         ref={(el) => attachImgRef(el, src)}
                         src={src}
@@ -584,7 +607,7 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
                 )}
               </div>
 
-              {images.length > 1 && (
+              {sanitizedImages.length > 1 && (
                 <>
                   <button
                     className={`${styles.npArrow} ${styles.npArrowLeft}`}
@@ -602,16 +625,16 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
                     className={`${styles.npArrow} ${styles.npArrowRight}`}
                     onClick={(e) => {
                       e.stopPropagation()
-                      setImageIndex((i) => Math.min(images.length - 1, i + 1))
+                      setImageIndex((i) => Math.min(sanitizedImages.length - 1, i + 1))
                       setShowControls(true)
                     }}
-                    disabled={safeIndex === images.length - 1}
+                    disabled={safeIndex === sanitizedImages.length - 1}
                     aria-label="Next image"
                   >
                     <FaChevronRight />
                   </button>
                   <span className={styles.npImageCount} onClick={(e) => e.stopPropagation()}>
-                    {safeIndex + 1} / {images.length}
+                    {safeIndex + 1} / {sanitizedImages.length}
                   </span>
                 </>
               )}

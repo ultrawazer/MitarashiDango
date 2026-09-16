@@ -56,14 +56,28 @@ export function createAsmrRouter(
           },
           ctx
         )
+        if (Array.isArray(result?.shows)) {
+          result.shows = result.shows.map((s: any) => ({
+            ...s,
+            thumbnail: proxyAsmrThumbnail(s.thumbnail, ctx),
+          }))
+        }
         res.json(result)
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
-          if (await flareSolverrService.isEnabled(req.db)) {
+          if ((await flareSolverrService.isEnabled(req.db)) && flareSolverrService.canAttemptSolve('jasmr')) {
             const solved = await flareSolverrService.solveAndCache('jasmr', 'https://japaneseasmr.com', req.db)
             if (solved.success) {
               try {
-                const retryCtx = getExtensionContext('jasmr', req.headers)
+                const fsUrl = await flareSolverrService.getBaseUrl(req.db)
+                const fsTimeout = await flareSolverrService.getMaxTimeout(req.db)
+                const retryCtx = {
+                  ...getExtensionContext('jasmr', req.headers),
+                  cookie: solved.cookie,
+                  ua: solved.ua,
+                  flaresolverrUrl: fsUrl,
+                  flaresolverrTimeout: fsTimeout,
+                }
                 const result = await provider.browse(
                   {
                     query: req.query.q as string,
@@ -73,10 +87,20 @@ export function createAsmrRouter(
                   },
                   retryCtx
                 )
+                if (Array.isArray(result?.shows)) {
+                  result.shows = result.shows.map((s: any) => ({
+                    ...s,
+                    thumbnail: proxyAsmrThumbnail(s.thumbnail, retryCtx),
+                  }))
+                }
+                flareSolverrService.recordSolveSuccess('jasmr')
                 return res.json(result)
               } catch (retryErr) {
                 logger.warn({ err: retryErr }, '[Asmr] browse retry after FlareSolverr solve failed')
+                flareSolverrService.recordSolveFailure('jasmr')
               }
+            } else {
+              flareSolverrService.recordSolveFailure('jasmr')
             }
           }
           return res.status(403).json({
@@ -91,6 +115,33 @@ export function createAsmrRouter(
       }
     }
   )
+
+  function proxyAsmrThumbnail(thumb?: string, ctx?: { cookie?: string; ua?: string }) {
+    if (!thumb || typeof thumb !== 'string') return thumb
+    if (thumb.startsWith('/api/proxy')) return thumb
+    if (thumb.startsWith('http://') || thumb.startsWith('https://')) {
+      let proxied = `/api/proxy?url=${encodeURIComponent(thumb)}&referer=${encodeURIComponent('https://japaneseasmr.com/')}`
+      if (ctx?.cookie) proxied += `&cookie=${encodeURIComponent(ctx.cookie)}`
+      if (ctx?.ua) proxied += `&ua=${encodeURIComponent(ctx.ua)}`
+      return proxied
+    }
+    return thumb
+  }
+
+  function proxyAsmrImages(images: string[], ctx?: { cookie?: string; ua?: string }) {
+    if (!Array.isArray(images)) return []
+    return images.map((img: string) => {
+      if (!img || typeof img !== 'string') return img
+      const isProxied = img.startsWith('/api/proxy')
+      if (!isProxied && (img.startsWith('http://') || img.startsWith('https://'))) {
+        let proxied = `/api/proxy?url=${encodeURIComponent(img)}&referer=${encodeURIComponent('https://japaneseasmr.com/')}`
+        if (ctx?.cookie) proxied += `&cookie=${encodeURIComponent(ctx.cookie)}`
+        if (ctx?.ua) proxied += `&ua=${encodeURIComponent(ctx.ua)}`
+        return proxied
+      }
+      return img
+    })
+  }
 
   function proxyAsmrTracks(rawTracks: any[], ctx?: { cookie?: string; ua?: string }) {
     if (!Array.isArray(rawTracks)) return []
@@ -137,31 +188,43 @@ export function createAsmrRouter(
           rjCode,
           description: episodes?.description || '',
           tracks: proxyAsmrTracks(streams?.[0]?.links || [], ctx),
-          images,
+          images: proxyAsmrImages(images, ctx),
           chapters,
         })
       } catch (err) {
         if ((err as Error).message === 'AUTH_REQUIRED') {
-          if (await flareSolverrService.isEnabled(req.db)) {
+          if ((await flareSolverrService.isEnabled(req.db)) && flareSolverrService.canAttemptSolve('jasmr')) {
             const solved = await flareSolverrService.solveAndCache('jasmr', 'https://japaneseasmr.com', req.db)
             if (solved.success) {
               try {
-                const retryCtx = getExtensionContext('jasmr', req.headers)
+                const fsUrl = await flareSolverrService.getBaseUrl(req.db)
+                const fsTimeout = await flareSolverrService.getMaxTimeout(req.db)
+                const retryCtx = {
+                  ...getExtensionContext('jasmr', req.headers),
+                  cookie: solved.cookie,
+                  ua: solved.ua,
+                  flaresolverrUrl: fsUrl,
+                  flaresolverrTimeout: fsTimeout,
+                }
                 const episodes = await provider.getEpisodes(rjCode, retryCtx)
                 const streams = await provider.getStreamUrls(rjCode, '1', retryCtx)
                 const images = provider.getImages ? await provider.getImages(rjCode, retryCtx) : []
                 const chapters = provider.getChapters ? await provider.getChapters(rjCode, retryCtx) : []
 
+                flareSolverrService.recordSolveSuccess('jasmr')
                 return res.json({
                   rjCode,
                   description: episodes?.description || '',
                   tracks: proxyAsmrTracks(streams?.[0]?.links || [], retryCtx),
-                  images,
+                  images: proxyAsmrImages(images, retryCtx),
                   chapters,
                 })
               } catch (retryErr) {
                 logger.warn({ err: retryErr }, '[Asmr] work retry after FlareSolverr solve failed')
+                flareSolverrService.recordSolveFailure('jasmr')
               }
+            } else {
+              flareSolverrService.recordSolveFailure('jasmr')
             }
           }
           return res.status(403).json({

@@ -44,5 +44,18 @@ export function createFlareSolverrRouter(): Router {
     }
   })
 
+  // Clear cached FlareSolverr credentials for an extension (e.g. when user saves manual credentials)
+  router.post('/flaresolverr/clear-cache/:extensionId', (req: Request, res: Response) => {
+    try {
+      const extensionId = req.params.extensionId as string
+      flareSolverrService.clearCachedCredentials(extensionId)
+      flareSolverrService.recordSolveSuccess(extensionId)
+      res.json({ success: true, message: `FlareSolverr cache cleared for ${extensionId}` })
+    } catch (err) {
+      logger.error({ err }, 'Failed to clear FlareSolverr cache')
+      res.status(500).json({ success: false, error: (err as Error).message })
+    }
+  })
+
   return router
 }

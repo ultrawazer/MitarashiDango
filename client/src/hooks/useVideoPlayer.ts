@@ -9,6 +9,7 @@ interface VideoPlayerProps {
   episodeCount?: number
   sourceType?: string
   knownDuration?: number
+  streamStartTime?: number
   showMeta?: {
     name?: string
     thumbnail?: string
@@ -27,6 +28,7 @@ const useVideoPlayer = ({
   episodeCount,
   sourceType,
   knownDuration,
+  streamStartTime = 0,
   showMeta,
 }: VideoPlayerProps) => {
   const queryClient = useQueryClient()
@@ -120,12 +122,13 @@ const useVideoPlayer = ({
     const video = videoRef.current
     if (!showId || !episodeNumber || !showMeta?.name) return null
 
+    const streamOffset = streamStartTime || 0
     return {
       showId,
       episodeNumber,
       episodeCount,
-      currentTime: video ? video.currentTime : 0,
-      duration: video ? video.duration : 0,
+      currentTime: video ? streamOffset + video.currentTime : 0,
+      duration: duration > 0 ? duration : (video ? streamOffset + video.duration : 0),
       showName: showMeta.name,
       showThumbnail: showMeta.thumbnail,
       nativeName: showMeta.names?.native,
@@ -139,7 +142,7 @@ const useVideoPlayer = ({
       sessionId: sessionIdRef.current,
       isAdult: showMeta.isAdult,
     }
-  }, [showId, episodeNumber, episodeCount, showMeta])
+  }, [showId, episodeNumber, episodeCount, showMeta, duration, streamStartTime])
 
   const sendProgressUpdate = useCallback(
     (isFinalUpdate = false, force = false) => {
@@ -151,18 +154,21 @@ const useVideoPlayer = ({
       const video = videoRef.current
       if (!video && sourceType !== 'iframe') return false
 
-      const isFinished = video ? video.currentTime >= video.duration * 0.8 : false
-      let timeToReport = video ? video.currentTime : 0
+      const streamOffset = streamStartTime || 0
+      const effCurrent = video ? streamOffset + video.currentTime : 0
+      const effDur = duration > 0 ? duration : (video ? streamOffset + video.duration : 0)
+      const isFinished = effDur > 0 && effCurrent >= effDur * 0.8
+      let timeToReport = effCurrent
 
       if (isFinalUpdate && isFinished) {
-        timeToReport = video ? video.duration : 0
+        timeToReport = effDur
       }
 
       if (!force) {
         if (timeToReport === 0 && !isFinished) return false
 
-        const timeDiff = video ? Math.abs(timeToReport - lastReportedTime.current) : 0
-        if (!isFinalUpdate && video && timeToReport !== video.duration && timeDiff < 5) {
+        const timeDiff = Math.abs(timeToReport - lastReportedTime.current)
+        if (!isFinalUpdate && effDur > 0 && timeToReport !== effDur && timeDiff < 5) {
           return false
         }
       }
@@ -494,6 +500,9 @@ const useVideoPlayer = ({
   const onWaiting = useCallback(() => {
     setIsBuffering(true)
   }, [])
+  const onCanPlay = useCallback(() => {
+    setIsBuffering(false)
+  }, [])
   const onPause = useCallback(() => {
     setIsPlaying(false)
     setShowControls(true)
@@ -530,17 +539,35 @@ const useVideoPlayer = ({
     return () => clearInterval(heartbeatInterval)
   }, [sourceType, sendProgressUpdate])
 
-  const onLoadedMetadata = useCallback(() => {
-    const rawDuration = videoRef.current?.duration
-    if (rawDuration && Number.isFinite(rawDuration) && rawDuration > 0) {
-      setDuration(rawDuration)
+  const updateDuration = useCallback((rawDuration?: number) => {
+    const raw = rawDuration !== undefined ? rawDuration : videoRef.current?.duration
+    // If we have a trusted knownDuration (e.g. from Shoko or AniList metadata >= 60s),
+    // and raw is abnormally small (e.g. an initial fMP4 fragment of < 30s or < knownDuration * 0.5),
+    // do NOT let the fragment duration clobber knownDuration!
+    if (knownDuration && knownDuration > 60) {
+      if (!raw || !Number.isFinite(raw) || raw < 30 || raw < knownDuration * 0.5) {
+        setDuration(knownDuration)
+        return
+      }
+    }
+
+    if (raw && Number.isFinite(raw) && raw > 0) {
+      setDuration(raw)
     } else if (knownDuration && knownDuration > 0) {
       setDuration(knownDuration)
     } else {
       setDuration(0)
     }
+  }, [knownDuration])
+
+  const onLoadedMetadata = useCallback(() => {
+    updateDuration()
     syncPlaybackRate()
-  }, [syncPlaybackRate, knownDuration])
+  }, [updateDuration, syncPlaybackRate])
+
+  const onDurationChange = useCallback(() => {
+    updateDuration()
+  }, [updateDuration])
   const onVolumeChange = useCallback(() => {
     if (videoRef.current) {
       const newMuted = videoRef.current.muted
@@ -557,7 +584,9 @@ const useVideoPlayer = ({
   const onTimeUpdate = useCallback(() => {
     const video = videoRef.current
     if (!video) return
-    const time = video.currentTime || 0
+    setIsBuffering(false)
+    const streamOffset = streamStartTime || 0
+    const time = streamOffset + (video.currentTime || 0)
     const now = Date.now()
     if (now - lastThrottledUpdateTime.current > 60000) {
       if (sendProgressUpdate()) {
@@ -574,10 +603,10 @@ const useVideoPlayer = ({
       return prev
     })
     if (isAutoSkipEnabled && activeSkip && !video.paused) {
-      video.currentTime = activeSkip.end_time
+      video.currentTime = Math.max(0, activeSkip.end_time - streamOffset)
       setCurrentSkipInterval(null)
     }
-  }, [skipIntervals, isAutoSkipEnabled, sendProgressUpdate])
+  }, [skipIntervals, isAutoSkipEnabled, sendProgressUpdate, streamStartTime])
 
   const reportFinalProgress = useCallback(() => {
     const payload = buildProgressPayload()
@@ -634,6 +663,8 @@ const useVideoPlayer = ({
       onPlay,
       onPause,
       onLoadedMetadata,
+      onDurationChange,
+      setDuration,
       formatTime,
       onVolumeChange,
       onProgress,
@@ -656,6 +687,7 @@ const useVideoPlayer = ({
       setIsFullscreen,
       onWaiting,
       onPlaying,
+      onCanPlay,
       sendProgressUpdate,
       setUseNativeControls,
     }),
@@ -667,6 +699,8 @@ const useVideoPlayer = ({
       onPlay,
       onPause,
       onLoadedMetadata,
+      onDurationChange,
+      setDuration,
       onVolumeChange,
       onProgress,
       onTimeUpdate,
@@ -674,6 +708,7 @@ const useVideoPlayer = ({
       setIsFullscreen,
       onWaiting,
       onPlaying,
+      onCanPlay,
       sendProgressUpdate,
       setUseNativeControls,
     ]

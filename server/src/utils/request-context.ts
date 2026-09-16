@@ -11,36 +11,40 @@ export function getExtensionContext(
   const store = requestContext.getStore()
   const id = extensionId?.toLowerCase() || ''
 
-  // 1. FlareSolverr credentials take precedence if available and valid
+  // 1. Client request headers (explicit manual verification credentials) take highest precedence
+  let manualCookie: string | undefined
+  let manualUa: string | undefined
+
+  if (id && reqHeaders?.[`x-ext-${id}-cookie`]) {
+    manualCookie = reqHeaders[`x-ext-${id}-cookie`] as string
+  } else if (id && store?.get(`x-ext-${id}-cookie`)) {
+    manualCookie = store.get(`x-ext-${id}-cookie`)
+  } else if (id === 'animepahe') {
+    manualCookie = (reqHeaders?.['x-animepahe-cookie'] as string) || store?.get('cookie')
+  } else if (id === 'jasmr') {
+    manualCookie = (reqHeaders?.['x-jasmr-cookie'] as string) || store?.get('jasmr_cookie')
+  }
+
+  if (id && reqHeaders?.[`x-ext-${id}-ua`]) {
+    manualUa = reqHeaders[`x-ext-${id}-ua`] as string
+  } else if (id && store?.get(`x-ext-${id}-ua`)) {
+    manualUa = store.get(`x-ext-${id}-ua`)
+  } else if (id === 'animepahe') {
+    manualUa = (reqHeaders?.['x-animepahe-ua'] as string) || store?.get('ua')
+  } else if (id === 'jasmr') {
+    manualUa = (reqHeaders?.['x-jasmr-ua'] as string) || store?.get('jasmr_ua')
+  }
+
+  // 2. FlareSolverr credentials are used as automated fallback when manual credentials are not present
   const fsCreds = id ? flareSolverrService.getCachedCredentials(id) : null
-  let cookie: string | undefined = fsCreds?.cookie
-  let ua: string | undefined = fsCreds?.ua
 
-  // Fallback to client request headers or store if not cached by FlareSolverr
-  if (!cookie) {
-    if (id && reqHeaders?.[`x-ext-${id}-cookie`]) {
-      cookie = reqHeaders[`x-ext-${id}-cookie`] as string
-    } else if (id && store?.get(`x-ext-${id}-cookie`)) {
-      cookie = store.get(`x-ext-${id}-cookie`)
-    } else if (id === 'animepahe') {
-      cookie = (reqHeaders?.['x-animepahe-cookie'] as string) || store?.get('cookie')
-    } else if (id === 'jasmr') {
-      cookie = (reqHeaders?.['x-jasmr-cookie'] as string) || store?.get('jasmr_cookie')
-    }
+  // If client provided manual credentials that conflict with FlareSolverr's cache, evict the stale FlareSolverr cache
+  if (id && manualCookie && fsCreds?.cookie && manualCookie !== fsCreds.cookie) {
+    flareSolverrService.clearCachedCredentials(id)
   }
 
-  // 2. Resolve User-Agent
-  if (!ua) {
-    if (id && reqHeaders?.[`x-ext-${id}-ua`]) {
-      ua = reqHeaders[`x-ext-${id}-ua`] as string
-    } else if (id && store?.get(`x-ext-${id}-ua`)) {
-      ua = store.get(`x-ext-${id}-ua`)
-    } else if (id === 'animepahe') {
-      ua = (reqHeaders?.['x-animepahe-ua'] as string) || store?.get('ua')
-    } else if (id === 'jasmr') {
-      ua = (reqHeaders?.['x-jasmr-ua'] as string) || store?.get('jasmr_ua')
-    }
-  }
+  const cookie = manualCookie || fsCreds?.cookie
+  const ua = manualUa || fsCreds?.ua
 
   const isFsEnabled = flareSolverrService.isEnabledSync()
   const flaresolverrUrl = isFsEnabled ? flareSolverrService.getCachedBaseUrl() : undefined

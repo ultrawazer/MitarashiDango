@@ -212,7 +212,7 @@ export class TranscoderService {
   public extractSubtitle(
     inputUrl: string,
     subtitleIndex: number
-  ): NodeJS.ReadableStream | null {
+  ): { process: ChildProcess; stdout: NodeJS.ReadableStream } | null {
     if (!this.hasFfmpeg) return null
 
     const args = [
@@ -220,13 +220,17 @@ export class TranscoderService {
       '-loglevel',
       'error',
       '-probesize',
-      '5000000',
+      '1000000',
       '-analyzeduration',
-      '5000000',
+      '1000000',
       '-i',
       inputUrl,
+      '-vn',
+      '-an',
       '-map',
       `0:s:${subtitleIndex}`,
+      '-c:s',
+      'webvtt',
       '-f',
       'webvtt',
       'pipe:1',
@@ -236,7 +240,7 @@ export class TranscoderService {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
-    return proc.stdout
+    return { process: proc, stdout: proc.stdout! }
   }
 }
 

@@ -36,11 +36,55 @@ const CLOUDFLARE_PROVIDERS: { extensionId: string; authUrl: string }[] = [
 export class FlareSolverrService {
   private db?: DatabaseWrapper
   private credentialCache = new Map<string, { cookie: string; ua: string; expiresAt: number }>()
+  private solveAttempts = new Map<string, { lastAttempt: number; consecutiveFailures: number }>()
   private preWarmInterval: ReturnType<typeof setInterval> | null = null
 
   private cachedBaseUrl: string = (process.env.FLARESOLVERR_URL || 'http://localhost:8191').trim()
   private cachedEnabled: boolean = process.env.FLARESOLVERR_ENABLED === 'true'
   private cachedMaxTimeout: number = 60000
+
+  /**
+   * Checks if an automated FlareSolverr solve can be attempted for an extension.
+   * If an automated solve was attempted within the last 60 seconds and failed, returns false
+   * to prevent rapid 400ms retry loops.
+   */
+  public canAttemptSolve(extensionId?: string): boolean {
+    if (!extensionId) return true
+    const id = extensionId.toLowerCase()
+    const attempt = this.solveAttempts.get(id)
+    if (!attempt) return true
+    if (attempt.consecutiveFailures > 0 && Date.now() - attempt.lastAttempt < 60_000) {
+      return false
+    }
+    return true
+  }
+
+  /**
+   * Records a failed solve or a failed retry following a solve, immediately evicting
+   * the cached credential and triggering the cooldown.
+   */
+  public recordSolveFailure(extensionId?: string): void {
+    if (!extensionId) return
+    const id = extensionId.toLowerCase()
+    const existing = this.solveAttempts.get(id) || { lastAttempt: Date.now(), consecutiveFailures: 0 }
+    this.solveAttempts.set(id, {
+      lastAttempt: Date.now(),
+      consecutiveFailures: existing.consecutiveFailures + 1,
+    })
+    this.clearCachedCredentials(id)
+    logger.info(
+      { extensionId: id, failures: existing.consecutiveFailures + 1 },
+      'FlareSolverr solve failure recorded and cache cleared'
+    )
+  }
+
+  /**
+   * Resets solve failure tracking upon successful request with FlareSolverr credentials.
+   */
+  public recordSolveSuccess(extensionId?: string): void {
+    if (!extensionId) return
+    this.solveAttempts.delete(extensionId.toLowerCase())
+  }
 
   public setDb(db: DatabaseWrapper): void {
     this.db = db
@@ -308,10 +352,22 @@ export class FlareSolverrService {
       return { success: false, error: 'FlareSolverr is not enabled' }
     }
 
+    if (!this.canAttemptSolve(extensionId)) {
+      logger.warn(
+        { extensionId },
+        'FlareSolverr cooldown active due to recent failed attempt, skipping automated solve'
+      )
+      return {
+        success: false,
+        error: 'FlareSolverr cooldown active due to recent failed attempt. Manual verification required.',
+      }
+    }
+
     const configuredTimeout = await this.getMaxTimeout(customDb)
     logger.info({ extensionId, authUrl, maxTimeout: configuredTimeout }, 'Invoking FlareSolverr to solve Cloudflare challenge')
     const res = await this.solve(authUrl, { maxTimeout: configuredTimeout }, customDb)
     if (!res.success || !res.cookieHeader || !res.userAgent) {
+      this.recordSolveFailure(extensionId)
       logger.warn({ extensionId, err: res.error }, 'FlareSolverr challenge solve failed')
       return {
         success: false,
@@ -319,8 +375,8 @@ export class FlareSolverrService {
       }
     }
 
-    // Cache credentials for 2 hours
-    const expiresAt = Date.now() + 2 * 60 * 60 * 1000
+    // Cache credentials for 30 minutes (purged immediately if any request fails)
+    const expiresAt = Date.now() + 30 * 60 * 1000
     this.credentialCache.set(extensionId.toLowerCase(), {
       cookie: res.cookieHeader,
       ua: res.userAgent,
@@ -349,6 +405,15 @@ export class FlareSolverrService {
       return null
     }
     return { cookie: cached.cookie, ua: cached.ua }
+  }
+
+  public setCachedCredentials(extensionId: string, creds: { cookie: string; ua: string; expiresAt?: number }): void {
+    if (!extensionId) return
+    this.credentialCache.set(extensionId.toLowerCase(), {
+      cookie: creds.cookie,
+      ua: creds.ua,
+      expiresAt: creds.expiresAt || (Date.now() + 30 * 60 * 1000),
+    })
   }
 
   public clearCachedCredentials(extensionId?: string): void {

@@ -8,13 +8,20 @@ interface AsmrCardProps {
 }
 
 const AsmrCard: React.FC<AsmrCardProps> = ({ work, onSelect }) => {
+  const thumbSrc =
+    work.thumbnail &&
+    !work.thumbnail.startsWith('/api/proxy') &&
+    (work.thumbnail.startsWith('http://') || work.thumbnail.startsWith('https://'))
+      ? `/api/proxy?url=${encodeURIComponent(work.thumbnail)}&referer=${encodeURIComponent('https://japaneseasmr.com/')}`
+      : work.thumbnail
+
   return (
     <button className={styles.card} onClick={() => onSelect(work)} title={work.name}>
       <div className={styles.thumbWrap}>
-        {work.thumbnail ? (
+        {thumbSrc ? (
           <img
             className={styles.thumb}
-            src={work.thumbnail}
+            src={thumbSrc}
             alt={work.name}
             loading="lazy"
             draggable={false}

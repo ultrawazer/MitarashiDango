@@ -51,6 +51,8 @@ export class ProxyController {
     'japaneseasmr.com',
     'weeabo0.xyz',
     'weeab0o.xyz',
+    'weeaboo.xyz',
+    'weeab00.xyz',
   ])
   private static readonly GOT_SCRAPING_SUFFIXES = [
     '.uwucdn.top',
@@ -62,6 +64,8 @@ export class ProxyController {
     '.japaneseasmr.com',
     '.weeabo0.xyz',
     '.weeab0o.xyz',
+    '.weeaboo.xyz',
+    '.weeab00.xyz',
   ]
   private static readonly HANIME_HOSTS = new Set(['r2.1hanime.com', '1.1hanime.com'])
   private static readonly OPPAI_HOSTS = new Set(['myspacecat.pictures'])
@@ -202,6 +206,8 @@ export class ProxyController {
       if (
         urlStr.includes('weeabo0.xyz') ||
         urlStr.includes('weeab0o.xyz') ||
+        urlStr.includes('weeaboo.xyz') ||
+        urlStr.includes('weeab00.xyz') ||
         urlStr.includes('japaneseasmr.com')
       ) {
         if (!headers['Referer']) headers['Referer'] = refererStr || 'https://japaneseasmr.com/'
@@ -312,6 +318,7 @@ export class ProxyController {
               url: urlStr,
               method: 'GET',
               headers,
+              http2: false,
               timeout: { request: 30000 },
               followRedirect: true,
               throwHttpErrors: false,
@@ -336,6 +343,9 @@ export class ProxyController {
               const ar = upstreamRes.headers['accept-ranges']
               if (ar) res.set('Accept-Ranges', ar)
               res.set('Access-Control-Allow-Origin', '*')
+              res.set('Access-Control-Allow-Headers', '*')
+              res.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges')
+              res.flushHeaders()
             })
 
             upstream.on('error', (err: Error) => {

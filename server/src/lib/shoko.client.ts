@@ -159,6 +159,10 @@ export class ShokoClient {
   private anidbNegativeCache = new Set<number>()
   private negativeCacheInterval: ReturnType<typeof setInterval> | null = null
 
+  // In-memory cache for series episodes to prevent redundant 100-episode joins
+  private seriesEpisodesCache = new Map<number, { data: ShokoEpisode[]; timestamp: number }>()
+  private readonly EPISODES_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
   public init(db: DatabaseWrapper): void {
     this.db = db
     this.loadConfigFromDb(db)
@@ -512,6 +516,11 @@ export class ShokoClient {
   }
 
   public async getSeriesEpisodes(seriesId: number, db?: DatabaseWrapper): Promise<ShokoEpisode[]> {
+    const cached = this.seriesEpisodesCache.get(seriesId)
+    if (cached && Date.now() - cached.timestamp < this.EPISODES_CACHE_TTL) {
+      return cached.data
+    }
+
     try {
       const { client } = this.getClient(db)
       const res = await client.get(`/api/v3/Series/${seriesId}/Episode`, {
@@ -523,9 +532,14 @@ export class ShokoClient {
         },
       })
       const data = res.data
-      if (Array.isArray(data)) return data
-      if (Array.isArray(data?.List)) return data.List
-      return []
+      let list: ShokoEpisode[] = []
+      if (Array.isArray(data)) list = data
+      else if (Array.isArray(data?.List)) list = data.List
+
+      if (list.length > 0) {
+        this.seriesEpisodesCache.set(seriesId, { data: list, timestamp: Date.now() })
+      }
+      return list
     } catch (err) {
       log.error({ err, seriesId }, 'Failed to fetch Shoko series episodes')
       return []

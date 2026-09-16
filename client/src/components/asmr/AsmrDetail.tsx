@@ -27,6 +27,15 @@ const AsmrDetail: React.FC<AsmrDetailProps> = ({ work, onClose, onPlay, t }) => 
 
   const tracks = data?.tracks || []
 
+  const thumbnailSrc = useMemo(() => {
+    if (!work.thumbnail) return ''
+    if (work.thumbnail.startsWith('/api/proxy')) return work.thumbnail
+    if (work.thumbnail.startsWith('http://') || work.thumbnail.startsWith('https://')) {
+      return `/api/proxy?url=${encodeURIComponent(work.thumbnail)}&referer=${encodeURIComponent('https://japaneseasmr.com/')}`
+    }
+    return work.thumbnail
+  }, [work.thumbnail])
+
   return (
     <div className={styles.detailOverlay} onClick={onClose}>
       <div className={styles.detailModal} onClick={(e) => e.stopPropagation()}>
@@ -35,8 +44,8 @@ const AsmrDetail: React.FC<AsmrDetailProps> = ({ work, onClose, onPlay, t }) => 
         </button>
 
         <div className={styles.detailHeader}>
-          {work.thumbnail ? (
-            <img className={styles.detailCover} src={work.thumbnail} alt={work.name} />
+          {thumbnailSrc ? (
+            <img className={styles.detailCover} src={thumbnailSrc} alt={work.name} />
           ) : (
             <div className={`${styles.detailCover} ${styles.thumbPlaceholder}`} />
           )}

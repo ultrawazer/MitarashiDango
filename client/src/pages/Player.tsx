@@ -41,6 +41,7 @@ import AnimeMetaDetails from '../components/anime/AnimeMetaDetails'
 import SynopsisText from '../components/anime/SynopsisText'
 import QueueOptionsButton from '../components/anime/QueueOptionsButton'
 import { useSetting } from '../hooks/useSettings'
+import { parseVttCue } from '../lib/vtt-parser'
 
 const Player: React.FC = () => {
   const { id: showId, episodeNumber } = useParams<{ id: string; episodeNumber?: string }>()
@@ -101,6 +102,18 @@ const Player: React.FC = () => {
     state.showMeta.isAdult,
   ])
 
+  const streamStartTime = useMemo(() => {
+    if (!state.selectedLink?.link) return 0
+    try {
+      const search = state.selectedLink.link.includes('?') ? state.selectedLink.link.split('?')[1] : ''
+      const params = new URLSearchParams(search)
+      const st = params.get('startTime')
+      return st ? parseFloat(st) || 0 : 0
+    } catch {
+      return 0
+    }
+  }, [state.selectedLink?.link])
+
   const player = useVideoPlayer({
     skipIntervals: state.skipIntervals,
     showId,
@@ -109,8 +122,11 @@ const Player: React.FC = () => {
     sourceType: state.selectedSource?.type,
     showMeta: memoizedShowMeta,
     knownDuration: state.selectedSource?.duration || (state.showMeta?.episodeDuration ? Number(state.showMeta.episodeDuration) * 60 : undefined),
+    streamStartTime,
   })
   const { refs, actions } = player
+  const actionsRef = useRef(actions)
+  actionsRef.current = actions
 
   const hlsInstance = useRef<Hls | null>(null)
   const isMobile = useIsMobile()
@@ -338,35 +354,30 @@ const Player: React.FC = () => {
     [actions, player.state.showControls]
   )
 
+  const currentLinkStr = state.selectedLink?.link
+  const currentSourceType = state.selectedSource?.type
+  const isCurrentHls = Boolean(state.selectedLink?.hls)
+
   useEffect(() => {
     const videoElement = refs.videoRef.current
     if (!videoElement) return
 
-    if (hlsInstance.current) {
-      hlsInstance.current.destroy()
+    if (!state.selectedSource || !state.selectedLink) {
+      if (hlsInstance.current) {
+        hlsInstance.current.destroy()
+        hlsInstance.current = null
+      }
+      try {
+        videoElement.pause()
+        videoElement.removeAttribute('src')
+        videoElement.load()
+      } catch {}
+      return
     }
-
-    if (state.loadingVideo || state.selectedSource) {
-      videoElement.pause()
-      videoElement.removeAttribute('src')
-      videoElement.load()
-    }
-
-    while (videoElement.firstChild) {
-      videoElement.removeChild(videoElement.firstChild)
-    }
-
-    if (!state.selectedSource || !state.selectedLink) return
 
     if (state.selectedSource.type === 'iframe') {
       seekToTimeRef.current = 0
       return
-    }
-
-    if (resumeTimeRef.current > 5 && !showResumeModalRef.current) {
-      seekToTimeRef.current = resumeTimeRef.current
-    } else if (showResumeModalRef.current) {
-      seekToTimeRef.current = 0
     }
 
     let proxiedUrl = state.selectedLink.link
@@ -381,6 +392,31 @@ const Player: React.FC = () => {
       if (state.selectedLink.headers?.Referer) {
         proxiedUrl += `&referer=${encodeURIComponent(state.selectedLink.headers.Referer)}`
       }
+    }
+
+    // Duplicate URL guard: if video is already attached to this exact URL, do not interrupt playback!
+    const currentSrc = videoElement.getAttribute('src') || videoElement.src
+    if (!state.selectedLink.hls && currentSrc && (currentSrc === proxiedUrl || currentSrc.endsWith(proxiedUrl))) {
+      return
+    }
+
+    if (hlsInstance.current) {
+      hlsInstance.current.destroy()
+      hlsInstance.current = null
+    }
+
+    videoElement.pause()
+    videoElement.removeAttribute('src')
+    videoElement.load()
+
+    while (videoElement.firstChild) {
+      videoElement.removeChild(videoElement.firstChild)
+    }
+
+    if (resumeTimeRef.current > 5 && !showResumeModalRef.current) {
+      seekToTimeRef.current = resumeTimeRef.current
+    } else if (showResumeModalRef.current) {
+      seekToTimeRef.current = 0
     }
 
     if (state.selectedSource.subtitles) {
@@ -401,36 +437,61 @@ const Player: React.FC = () => {
             (subSrc.startsWith('/') && !subSrc.startsWith('/api/subtitle-proxy'))
           )
 
-          if (!isLocalSub && !subSrc.startsWith('/api/subtitle-proxy')) {
-            subUrl = `/api/subtitle-proxy?url=${encodeURIComponent(subSrc)}`
-            if (state.selectedLink?.headers?.Referer) {
-              subUrl += `&referer=${encodeURIComponent(state.selectedLink.headers.Referer)}`
+          if (isLocalSub) {
+            track.dataset.subUrl = subUrl
+            track.dataset.isLocal = 'true'
+            track.src = 'data:text/vtt,WEBVTT%0A%0A'
+          } else {
+            if (!subSrc.startsWith('/api/subtitle-proxy')) {
+              subUrl = `/api/subtitle-proxy?url=${encodeURIComponent(subSrc)}`
+              if (state.selectedLink?.headers?.Referer) {
+                subUrl += `&referer=${encodeURIComponent(state.selectedLink.headers.Referer)}`
+              }
             }
+            track.src = subUrl
           }
-          track.src = subUrl
         }
 
-        const isEnglish = subLang.toLowerCase().startsWith('en') || (sub.label || '').toLowerCase().includes('english')
+        const isEnglish =
+          subLang.toLowerCase().startsWith('en') ||
+          (sub.label || '').toLowerCase().includes('english')
         if (subtitlesEnabled && isEnglish) {
           track.default = true
         }
         videoElement.appendChild(track)
+        if (subtitlesEnabled && isEnglish && track.track) {
+          track.track.mode = 'showing'
+        }
       })
       if (!subtitlesEnabled) {
-        actions.setActiveSubtitleTrack('off')
+        actionsRef.current.setActiveSubtitleTrack('off')
       }
-      actions.setAvailableSubtitles(state.selectedSource.subtitles)
+      actionsRef.current.setAvailableSubtitles(state.selectedSource.subtitles)
     }
 
     const targetTime = seekToTimeRef.current
     seekToTimeRef.current = 0
 
     const handleLoaded = () => {
+      actionsRef.current.onLoadedMetadata()
       if (targetTime > 0) {
         videoElement.currentTime = targetTime
       }
+      const shouldAutoPlay = !(showResumeModalRef.current && resumeTimeRef.current > 5)
+      if (shouldAutoPlay) {
+        videoElement.play().catch((error) => {
+          console.warn('Autoplay was prevented:', error)
+          actionsRef.current.setShowControls(true)
+        })
+      }
     }
+
+    const handleDurationChange = () => {
+      actionsRef.current.onDurationChange()
+    }
+
     videoElement.addEventListener('loadedmetadata', handleLoaded, { once: true })
+    videoElement.addEventListener('durationchange', handleDurationChange)
 
     if (state.selectedLink.hls) {
       const Hls = (window as unknown as { Hls?: typeof Hls }).Hls
@@ -447,6 +508,15 @@ const Player: React.FC = () => {
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal && !hasAutoFallbackRef.current) {
             handleVideoSourceErrorRef.current()
+          }
+        })
+        hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+          if (
+            data.details?.totalduration &&
+            Number.isFinite(data.details.totalduration) &&
+            data.details.totalduration > 0
+          ) {
+            actionsRef.current.setDuration(data.details.totalduration)
           }
         })
         hls.loadSource(proxiedUrl)
@@ -473,21 +543,20 @@ const Player: React.FC = () => {
       videoElement.muted = savedMuted === 'true'
     }
 
-    const shouldAutoPlay = !(showResumeModalRef.current && resumeTimeRef.current > 5)
-    if (shouldAutoPlay) {
-      videoElement.play().catch((error) => {
-        console.warn('Autoplay was prevented:', error)
-        actions.setShowControls(true)
-      })
-    }
-
     return () => {
       videoElement.removeEventListener('loadedmetadata', handleLoaded)
+      videoElement.removeEventListener('durationchange', handleDurationChange)
       if (hlsInstance.current) {
         hlsInstance.current.destroy()
+        hlsInstance.current = null
       }
+      try {
+        videoElement.pause()
+        videoElement.removeAttribute('src')
+        videoElement.load()
+      } catch {}
     }
-  }, [state.selectedSource, state.selectedLink, refs.videoRef, actions, state.loadingVideo])
+  }, [currentLinkStr, currentSourceType, isCurrentHls, refs.videoRef])
 
   const handleVideoSourceError = useCallback(() => {
     if (hasAutoFallbackRef.current) return
@@ -904,7 +973,7 @@ const Player: React.FC = () => {
       localStorage.getItem('playerSubtitlesEnabled') !== 'false'
     ) {
       const englishTrack = player.state.availableSubtitles.find(
-        (t) => t.lang === 'en' || t.label === 'English'
+        (t) => t.lang?.toLowerCase().startsWith('en') || (t.label || '').toLowerCase().includes('english')
       )
       const trackToActivate = englishTrack || player.state.availableSubtitles[0]
       setActiveSubtitleTrack(trackToActivate.lang || trackToActivate.label)
@@ -931,9 +1000,102 @@ const Player: React.FC = () => {
     })
     if (!matched && video.textTracks.length > 0) {
       const fallback =
-        Array.from(video.textTracks).find((t) => t.language === 'en' || t.label === 'English') ||
-        video.textTracks[0]
+        Array.from(video.textTracks).find(
+          (t) => t.language?.toLowerCase().startsWith('en') || (t.label || '').toLowerCase().includes('english')
+        ) || video.textTracks[0]
       if (fallback) fallback.mode = 'showing'
+    }
+  }, [player.state.activeSubtitleTrack, player.state.availableSubtitles, refs.videoRef])
+
+  // Progressive WebVTT cue streaming for local media subtitles (Option A + B)
+  useEffect(() => {
+    const video = refs.videoRef.current
+    if (!video || player.state.availableSubtitles.length === 0) return
+    const active = player.state.activeSubtitleTrack
+    const enabled = localStorage.getItem('playerSubtitlesEnabled') !== 'false'
+
+    if (!enabled || active === 'off' || active === null) {
+      return
+    }
+
+    const trackEls = Array.from(video.querySelectorAll('track'))
+    let activeTrackEl = trackEls.find((el) => {
+      const t = el.track
+      return t && t.mode === 'showing'
+    })
+
+    if (!activeTrackEl) {
+      activeTrackEl = trackEls.find(
+        (el) => el.srclang === active || el.label === active
+      )
+    }
+
+    if (!activeTrackEl || activeTrackEl.dataset.isLocal !== 'true' || !activeTrackEl.dataset.subUrl) {
+      return
+    }
+
+    if (activeTrackEl.dataset.loaded === 'true' || activeTrackEl.dataset.loading === 'true') {
+      return
+    }
+
+    const abortController = new AbortController()
+    activeTrackEl.dataset.loading = 'true'
+
+    const streamCues = async () => {
+      try {
+        const subUrl = activeTrackEl.dataset.subUrl!
+        const res = await fetch(subUrl, { signal: abortController.signal })
+        if (!res.ok || !res.body) {
+          throw new Error(`Subtitle HTTP ${res.status}`)
+        }
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        const textTrack = activeTrackEl.track
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const parts = buffer.split(/\r?\n\r?\n/)
+          buffer = parts.pop() || ''
+          for (const part of parts) {
+            const cueData = parseVttCue(part)
+            if (cueData && textTrack) {
+              try {
+                textTrack.addCue(new VTTCue(cueData.start, cueData.end, cueData.text))
+              } catch {}
+            }
+          }
+        }
+
+        if (buffer.trim() && textTrack) {
+          const cueData = parseVttCue(buffer)
+          if (cueData) {
+            try {
+              textTrack.addCue(new VTTCue(cueData.start, cueData.end, cueData.text))
+            } catch {}
+          }
+        }
+
+        activeTrackEl.dataset.loaded = 'true'
+        activeTrackEl.dataset.loading = 'false'
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.warn('[Player] Subtitle progressive stream error:', err)
+          activeTrackEl.dataset.loading = 'false'
+        }
+      }
+    }
+
+    streamCues()
+
+    return () => {
+      abortController.abort()
+      if (activeTrackEl.dataset.loaded !== 'true') {
+        activeTrackEl.dataset.loading = 'false'
+      }
     }
   }, [player.state.activeSubtitleTrack, player.state.availableSubtitles, refs.videoRef])
 
@@ -1526,7 +1688,10 @@ const Player: React.FC = () => {
                     selectedAudioTrackIndex={state.selectedAudioTrackIndex}
                     onAudioTrackChange={handleAudioTrackChange}
                     onSourceChange={(source, link) => {
-                      if (refs.videoRef.current && !isNaN(refs.videoRef.current.currentTime)) {
+                      const hasStartTime = Boolean(link?.link?.includes('startTime='))
+                      if (hasStartTime) {
+                        seekToTimeRef.current = 0
+                      } else if (refs.videoRef.current && !isNaN(refs.videoRef.current.currentTime)) {
                         seekToTimeRef.current = refs.videoRef.current.currentTime
                       }
 
@@ -1558,7 +1723,7 @@ const Player: React.FC = () => {
                     anime4kInitializing={isAnime4kInitializing}
                   />
                 )}{' '}
-              {!isVideoLoading && state.videoSources.length > 0 && (
+              {state.selectedSource?.type !== 'iframe' && (
                 <>
                   <video
                     ref={refs.videoRef}
@@ -1586,6 +1751,7 @@ const Player: React.FC = () => {
                     onVolumeChange={actions.onVolumeChange}
                     onWaiting={actions.onWaiting}
                     onPlaying={actions.onPlaying}
+                    onCanPlay={actions.onCanPlay}
                     onError={handleVideoSourceError}
                   />
                   <canvas

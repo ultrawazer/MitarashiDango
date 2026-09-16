@@ -1,4 +1,7 @@
 import { Request, Response } from 'express'
+import { ChildProcess } from 'child_process'
+import fs from 'fs'
+import path from 'path'
 import axios from 'axios'
 import { shokoClient, ShokoSeries } from '../lib/shoko.client'
 import { transcoderService, HwAccelMode } from '../lib/transcoder.service'
@@ -9,7 +12,26 @@ import logger from '../logger'
 
 const log = logger.child({ module: 'LocalMediaController' })
 
+const SUBTITLE_CACHE_DIR = path.resolve(__dirname, '../../data/cache/subtitles')
+if (!fs.existsSync(SUBTITLE_CACHE_DIR)) {
+  try {
+    fs.mkdirSync(SUBTITLE_CACHE_DIR, { recursive: true })
+  } catch {}
+}
+
+interface SubtitleJob {
+  cacheKey: string
+  fileId: number
+  trackIndex: number
+  process: ChildProcess
+  chunks: Buffer[]
+  responses: Set<Response>
+}
+
 export class LocalMediaController {
+  private activeRemuxStreams = new Map<string, ChildProcess>()
+  private activeSubtitleJobs = new Map<string, SubtitleJob>()
+  private clientActiveSubtitle = new Map<string, string>()
   /**
    * Checks if a local file needs FFmpeg remuxing for browser playback.
    * Returns false for MP4/WebM with browser-compatible codecs (H.264/HEVC + AAC/MP3/Opus).
@@ -101,7 +123,17 @@ export class LocalMediaController {
       }
 
       if (shouldRemux && hasFfmpeg) {
-        log.info({ fileId, audioIndex, transcodeVideo, hwAccel, startTime }, 'Starting FFmpeg remux stream')
+        const clientKey = `${req.ip || 'default'}`
+        const existingProcess = this.activeRemuxStreams.get(clientKey)
+        if (existingProcess) {
+          log.info({ clientKey }, 'Terminating previous active FFmpeg stream for client')
+          try {
+            existingProcess.kill('SIGKILL')
+          } catch {}
+          this.activeRemuxStreams.delete(clientKey)
+        }
+
+        log.info({ fileId, audioIndex, transcodeVideo, hwAccel, startTime, clientKey }, 'Starting FFmpeg remux stream')
 
         const remux = transcoderService.streamRemux({
           inputUrl: vfsUrl,
@@ -115,6 +147,8 @@ export class LocalMediaController {
           res.status(500).send('FFmpeg remux failed to initialize')
           return
         }
+
+        this.activeRemuxStreams.set(clientKey, remux.process)
 
         res.setHeader('Content-Type', 'video/mp4')
         res.setHeader('Cache-Control', 'no-cache')
@@ -134,7 +168,10 @@ export class LocalMediaController {
         remux.stdout.pipe(res)
 
         req.on('close', () => {
-          log.info({ fileId }, 'Client disconnected from remux stream, killing FFmpeg')
+          log.info({ fileId, clientKey }, 'Client disconnected from remux stream, killing FFmpeg')
+          if (this.activeRemuxStreams.get(clientKey) === remux.process) {
+            this.activeRemuxStreams.delete(clientKey)
+          }
           try {
             remux.process.kill('SIGKILL')
           } catch {}
@@ -210,21 +247,152 @@ export class LocalMediaController {
         return
       }
 
-      const vfsUrl = shokoClient.getVfsStreamUrl(fileId, req.db)
-      const subStream = transcoderService.extractSubtitle(vfsUrl, trackIndex)
+      const cacheKey = `${fileId}_${trackIndex}`
+      const cachePath = path.join(SUBTITLE_CACHE_DIR, `${cacheKey}.vtt`)
 
-      if (!subStream) {
+      // 1. Instant response from disk cache if already extracted
+      if (fs.existsSync(cachePath)) {
+        try {
+          const stats = fs.statSync(cachePath)
+          if (stats.size > 0) {
+            res.setHeader('Content-Type', 'text/vtt; charset=utf-8')
+            res.setHeader('Content-Length', stats.size)
+            res.setHeader('Cache-Control', 'public, max-age=86400')
+            fs.createReadStream(cachePath).pipe(res)
+            return
+          }
+        } catch {
+          // If stat/read fails, proceed with live extraction below
+        }
+      }
+
+      const clientKey = `${(req.query.sessionId as string) || req.ip || 'default'}`
+
+      // 2. Client preemption: if client was extracting a DIFFERENT subtitle, preempt it
+      const previousCacheKey = this.clientActiveSubtitle.get(clientKey)
+      if (previousCacheKey && previousCacheKey !== cacheKey) {
+        const prevJob = this.activeSubtitleJobs.get(previousCacheKey)
+        if (prevJob) {
+          log.info({ clientKey, previousCacheKey, cacheKey }, 'Preempting previous subtitle extraction for client')
+          try {
+            prevJob.process.kill('SIGKILL')
+          } catch {}
+          this.activeSubtitleJobs.delete(previousCacheKey)
+        }
+        this.clientActiveSubtitle.delete(clientKey)
+      }
+      this.clientActiveSubtitle.set(clientKey, cacheKey)
+
+      // 3. Attach to existing in-progress extraction for this exact subtitle if one is running
+      const existingJob = this.activeSubtitleJobs.get(cacheKey)
+      if (existingJob) {
+        res.setHeader('Content-Type', 'text/vtt; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-cache')
+        for (const chunk of existingJob.chunks) {
+          res.write(chunk)
+        }
+        existingJob.responses.add(res)
+
+        req.on('close', () => {
+          existingJob.responses.delete(res)
+          if (existingJob.responses.size === 0) {
+            log.info({ cacheKey }, 'All clients disconnected from subtitle job, killing FFmpeg')
+            try {
+              existingJob.process.kill('SIGKILL')
+            } catch {}
+            this.activeSubtitleJobs.delete(cacheKey)
+            if (this.clientActiveSubtitle.get(clientKey) === cacheKey) {
+              this.clientActiveSubtitle.delete(clientKey)
+            }
+          }
+        })
+        return
+      }
+
+      // 4. Start new live extraction
+      const vfsUrl = shokoClient.getVfsStreamUrl(fileId, req.db)
+      const sub = transcoderService.extractSubtitle(vfsUrl, trackIndex)
+
+      if (!sub) {
         res.status(500).send('Subtitle extraction unavailable')
         return
       }
 
       res.setHeader('Content-Type', 'text/vtt; charset=utf-8')
-      res.setHeader('Cache-Control', 'public, max-age=3600')
-      subStream.pipe(res)
+      res.setHeader('Cache-Control', 'no-cache')
+
+      const job: SubtitleJob = {
+        cacheKey,
+        fileId,
+        trackIndex,
+        process: sub.process,
+        chunks: [],
+        responses: new Set([res]),
+      }
+      this.activeSubtitleJobs.set(cacheKey, job)
+
+      sub.stdout.on('data', (chunk: Buffer) => {
+        job.chunks.push(chunk)
+        for (const clientRes of job.responses) {
+          try {
+            clientRes.write(chunk)
+          } catch {}
+        }
+      })
+
+      const cleanupJob = () => {
+        if (this.activeSubtitleJobs.get(cacheKey) === job) {
+          this.activeSubtitleJobs.delete(cacheKey)
+        }
+        if (this.clientActiveSubtitle.get(clientKey) === cacheKey) {
+          this.clientActiveSubtitle.delete(clientKey)
+        }
+      }
+
+      sub.process.on('close', (code) => {
+        cleanupJob()
+        if (code === 0 && job.chunks.length > 0) {
+          try {
+            const fullVtt = Buffer.concat(job.chunks)
+            if (fullVtt.length > 0) {
+              fs.writeFileSync(cachePath, fullVtt)
+              log.info({ fileId, trackIndex, size: fullVtt.length }, 'Saved extracted subtitle to disk cache')
+            }
+          } catch (writeErr) {
+            log.warn({ writeErr, fileId, trackIndex }, 'Failed to cache subtitle to disk')
+          }
+        }
+        for (const clientRes of job.responses) {
+          try {
+            clientRes.end()
+          } catch {}
+        }
+        job.responses.clear()
+      })
+
+      sub.process.on('error', (procErr) => {
+        cleanupJob()
+        log.error({ err: procErr, fileId, trackIndex }, 'Subtitle FFmpeg process error')
+        for (const clientRes of job.responses) {
+          if (!clientRes.headersSent) {
+            clientRes.status(500).send('Subtitle extraction error')
+          } else {
+            try {
+              clientRes.end()
+            } catch {}
+          }
+        }
+        job.responses.clear()
+      })
 
       req.on('close', () => {
-        if (typeof (subStream as any)?.destroy === 'function') {
-          ;(subStream as any).destroy()
+        job.responses.delete(res)
+        if (job.responses.size === 0) {
+          log.info({ clientKey, fileId, trackIndex }, 'Client disconnected from subtitle stream, terminating FFmpeg')
+          cleanupJob()
+          try {
+            job.process.kill('SIGKILL')
+          } catch {}
         }
       })
     } catch (err) {

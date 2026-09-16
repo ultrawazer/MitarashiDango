@@ -79,6 +79,9 @@ export const ExtensionAuthModal: React.FC<ExtensionAuthModalProps> = ({
           cookie: sanitized,
           ua: userAgent,
         })
+        fetch(`/api/flaresolverr/clear-cache/${encodeURIComponent(extensionId)}`, {
+          method: 'POST',
+        }).catch(() => {})
       }
       toast.success(`${displayName} credentials saved successfully!`)
       onSuccess?.()
