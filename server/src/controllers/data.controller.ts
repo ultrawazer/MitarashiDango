@@ -263,12 +263,46 @@ export class DataController {
       const provider = this.getProvider(req)
       if (!provider) return res.json([])
       const extContext = getExtensionContext(activeProviderKey, req.headers)
-      const urls = await provider.getStreamUrls(
+      let urls = await provider.getStreamUrls(
         showId,
         req.query.episodeNumber as string,
         req.query.mode as 'sub' | 'dub',
         extContext
       )
+
+      // If no streams found for an SP episode, attempt companion special title search fallback if provided
+      const epStr = (req.query.episodeNumber as string) || ''
+      const episodeTitle = req.query.episodeTitle as string | undefined
+      if ((!urls || urls.length === 0) && epStr.toUpperCase().startsWith('SP') && episodeTitle) {
+        const companionTitle = episodeTitle.replace(/\s*#?\d+.*$/, '').trim()
+        if (companionTitle && companionTitle.length > 2) {
+          try {
+            logger.info({ provider: activeProviderKey, companionTitle, epStr }, 'Attempting companion special title search')
+            const searchResults = await provider.search?.({ query: companionTitle })
+            if (searchResults && searchResults.length > 0) {
+              const best = pickBestMatch(
+                searchResults.map((r: any) => ({
+                  title: r.name || r.englishName || '',
+                  id: r.id || r._id || '',
+                })),
+                [companionTitle]
+              )
+              if (best) {
+                const numericEp = epStr.replace(/\D/g, '') || '1'
+                urls = await provider.getStreamUrls(
+                  best.item.id,
+                  numericEp,
+                  req.query.mode as 'sub' | 'dub',
+                  extContext
+                )
+              }
+            }
+          } catch (compErr) {
+            logger.warn({ err: compErr, companionTitle }, 'Companion special title search failed')
+          }
+        }
+      }
+
       res.json(urls || [])
     } catch (e) {
       const activeProviderKey = (req.query.provider as string)?.toLowerCase() || 'allanime'

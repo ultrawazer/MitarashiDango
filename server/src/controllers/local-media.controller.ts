@@ -759,15 +759,19 @@ export class LocalMediaController {
           ? `/api/shoko/image/${poster.Source || 'AniDB'}/${poster.Type || 'Poster'}/${poster.ID}`
           : undefined
 
+        const isSpecial = item.Type === 'Special'
+        const epNum = isSpecial && item.Number !== undefined ? `SP${item.Number}` : item.Number
+
         return {
           _id: anilistId ? String(anilistId) : `shoko:${item.IDs?.ShokoSeries || anidbId}`,
           id: anilistId ? String(anilistId) : `shoko:${item.IDs?.ShokoSeries || anidbId}`,
           name: item.SeriesTitle || 'Unknown Anime',
-          episodeNumber: item.Number,
+          episodeTitle: item.Title || undefined,
+          episodeNumber: epNum,
           airTime: item.AirDate ? item.AirDate.split('T')[0] : undefined,
           thumbnail: posterUrl,
           type: item.Type || 'TV',
-          isLocal: Boolean(item.IDs?.ShokoSeries || item.IDs?.ShokoEpisode || item.IDs?.ShokoFile),
+          isLocal: Boolean(item.IDs?.ShokoFile),
           watched: Boolean(item.Watched),
         }
       })

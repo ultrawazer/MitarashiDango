@@ -62,9 +62,12 @@ async function fetchVideoSources(
   if (!showId || !episodeNumber) throw new Error('Missing params')
 
   try {
+    const epTitleParam = (ui.showMeta as any)?.episodeTitle
+      ? `&episodeTitle=${encodeURIComponent((ui.showMeta as any).episodeTitle)}`
+      : ''
     const [sources, progress, preferredSourceData, skipTimesData] = await Promise.all([
       fetchApi(
-        `/api/video?showId=${showId}&episodeNumber=${episodeNumber}&mode=${ui.currentMode}&provider=${ui.selectedProvider}`
+        `/api/video?showId=${showId}&episodeNumber=${episodeNumber}&mode=${ui.currentMode}&provider=${ui.selectedProvider}${epTitleParam}`
       ).catch(() => null),
       fetchApi(`/api/episode-progress/${showId}/${episodeNumber}`).catch(() => null),
       fetchApi(`/api/settings?key=preferredSource`).catch(() => null),
@@ -169,6 +172,7 @@ export const usePlayerData = (
           thumbnail: meta.thumbnail as string,
           nativeName: meta.nativeName as string,
           englishName: meta.englishName as string,
+          episodeTitle: meta.episodeTitle as string | undefined,
           names: {
             romaji: (meta.englishName as string) || (meta.name as string),
             english: (meta.englishName as string) || (meta.name as string),

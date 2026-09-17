@@ -26,7 +26,8 @@ interface Anime {
   englishName?: string
   thumbnail: string
   type?: string
-  episodeNumber?: number
+  episodeNumber?: number | string
+  episodeTitle?: string
   currentTime?: number
   duration?: number
   showId?: string
@@ -247,11 +248,22 @@ const AnimeCard: React.FC<AnimeCardProps> = memo(
             nativeName: anime.nativeName,
             englishName: anime.englishName,
             type: anime.type,
+            episodeTitle: anime.episodeTitle,
           },
         }
-      : episodeToPlay && anime.episodeNumber
-        ? `/watch/${anime._id}/${anime.episodeNumber}`
-        : hasProgress
+      : episodeToPlay
+        ? {
+            pathname: `/watch/${anime._id}/${episodeToPlay}`,
+            state: {
+              name: anime.name,
+              thumbnail: anime.thumbnail,
+              nativeName: anime.nativeName,
+              englishName: anime.englishName,
+              type: anime.type,
+              episodeTitle: anime.episodeTitle,
+            },
+          }
+        : hasProgress && anime.episodeNumber
           ? `/watch/${anime._id}/${anime.episodeNumber}`
           : `/anime/${anime._id}`
 
@@ -276,6 +288,10 @@ const AnimeCard: React.FC<AnimeCardProps> = memo(
 
     const progressString = (() => {
       if (continueWatching && episodeToPlay) {
+        const epStr = String(episodeToPlay)
+        if (epStr.toUpperCase().startsWith('SP') || anime.type === 'Special') {
+          return `SP ${epStr.replace(/^SP/i, '')}`
+        }
         return `EP ${episodeToPlay}`
       }
 
@@ -284,6 +300,19 @@ const AnimeCard: React.FC<AnimeCardProps> = memo(
       }
 
       return null
+    })()
+
+    const epBadgeText = (() => {
+      if (progressString) return progressString
+      if (!anime.episodeNumber) return null
+      const epStr = String(anime.episodeNumber)
+      if (epStr.toUpperCase().startsWith('SP')) {
+        return `SP ${epStr.replace(/^SP/i, '')}`
+      }
+      if (anime.type === 'Special') {
+        return `SP ${epStr}`
+      }
+      return `EP ${epStr}`
     })()
 
     const posterEls = mergedConfig.elements?.poster
@@ -379,7 +408,7 @@ const AnimeCard: React.FC<AnimeCardProps> = memo(
                 {showTypeBadge && <div className={styles.typeBadge}>{anime.type || 'TV'}</div>}
                 {showEpBadge && (progressString || anime.episodeNumber) && (
                   <div className={styles.epBadge}>
-                    {progressString ? progressString : `EP ${anime.episodeNumber}`}
+                    {epBadgeText}
                     {anime.airTime && <span className={styles.airTime}>{anime.airTime}</span>}
                     {anime.aired === false && anime.nextEpisodeAirDate && (
                       <span className={styles.airTime}>

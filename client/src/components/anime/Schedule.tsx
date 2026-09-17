@@ -12,7 +12,8 @@ interface Anime {
   name: string
   thumbnail: string
   type?: string
-  episodeNumber?: number
+  episodeNumber?: number | string
+  episodeTitle?: string
   currentTime?: number
   duration?: number
   watchedCount?: number
@@ -194,16 +195,19 @@ const Schedule: React.FC<ScheduleProps> = ({ isLocalCalendar = false }) => {
                 No episodes scheduled for this day.
               </p>
             ) : (
-              scheduleData.map((anime) => (
-                <div key={anime._id} className={styles.carouselCard}>
-                  <AnimeCard
-                    key={anime._id}
-                    anime={anime}
-                    continueWatching={false}
-                    layout="vertical"
-                  />
-                </div>
-              ))
+              scheduleData.map((anime) => {
+                const uniqueKey = `${anime._id}:${anime.episodeNumber || 1}`
+                return (
+                  <div key={uniqueKey} className={styles.carouselCard}>
+                    <AnimeCard
+                      key={uniqueKey}
+                      anime={anime}
+                      continueWatching={false}
+                      layout="vertical"
+                    />
+                  </div>
+                )
+              })
             )}
           </div>
         </div>
