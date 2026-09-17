@@ -45,6 +45,7 @@ interface PlayerControlsProps {
   anime4kProfile?: 'low' | 'balanced' | 'high' | 'denoise'
   onAnime4kProfileChange?: (profile: 'low' | 'balanced' | 'high' | 'denoise') => void
   anime4kInitializing?: boolean
+  actualStreamStartTime?: number | null
 }
 
 const PlayerControls: React.FC<PlayerControlsProps> = ({
@@ -71,6 +72,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   anime4kProfile,
   onAnime4kProfileChange,
   anime4kInitializing,
+  actualStreamStartTime,
 }) => {
   const { state, refs, actions } = player
   const { showSettings, showVolumeSlider } = state
@@ -84,6 +86,9 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   }
 
   const streamStartTime = React.useMemo(() => {
+    if (actualStreamStartTime !== undefined && actualStreamStartTime !== null) {
+      return actualStreamStartTime
+    }
     if (!selectedLink?.link) return 0
     try {
       const search = selectedLink.link.includes('?') ? selectedLink.link.split('?')[1] : ''
@@ -93,7 +98,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
     } catch {
       return 0
     }
-  }, [selectedLink?.link])
+  }, [actualStreamStartTime, selectedLink?.link])
 
   const effectiveDuration = getEffDuration(state.duration, selectedSource?.duration)
 
@@ -220,7 +225,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
       const baseLink = selectedLink.link.split('?')[0]
       const search = selectedLink.link.includes('?') ? selectedLink.link.split('?')[1] : ''
       const params = new URLSearchParams(search)
-      params.set('startTime', String(Math.floor(targetTime)))
+      params.set('startTime', String(Math.round(targetTime * 1000) / 1000))
       const newLinkUrl = `${baseLink}?${params.toString()}`
       onSourceChange(selectedSource, {
         ...selectedLink,
@@ -343,7 +348,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
               const baseLink = selectedLink.link.split('?')[0]
               const search = selectedLink.link.includes('?') ? selectedLink.link.split('?')[1] : ''
               const params = new URLSearchParams(search)
-              params.set('startTime', String(Math.floor(targetTime)))
+              params.set('startTime', String(Math.round(targetTime * 1000) / 1000))
               const newLinkUrl = `${baseLink}?${params.toString()}`
               onSourceChange(selectedSource, {
                 ...selectedLink,

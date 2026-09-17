@@ -118,6 +118,7 @@ export class TranscoderService {
     transcodeVideo?: boolean
     hwAccel?: HwAccelMode
     startTime?: number
+    onActualStartTime?: (actualStart: number) => void
   }): { process: ChildProcess; stdout: NodeJS.ReadableStream } | null {
     if (!this.hasFfmpeg) return null
 
@@ -129,6 +130,7 @@ export class TranscoderService {
 
     // Fast seek if startTime specified
     if (options.startTime && options.startTime > 0) {
+      args.push('-noaccurate_seek')
       args.push('-ss', options.startTime.toString())
     }
 
@@ -182,15 +184,26 @@ export class TranscoderService {
       '-movflags',
       'frag_keyframe+empty_moov+default_base_moof',
       '-f',
-      'mp4',
-      'pipe:1'
+      'mp4'
     )
+
+    args.push('pipe:1')
 
     log.info({ args: args.join(' ') }, 'Spawning FFmpeg stream process')
 
     const proc = spawn(this.ffmpegPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+
+    if (options.onActualStartTime && options.startTime && options.startTime > 0) {
+      this.probeKeyframeTimestamp(options.inputUrl, options.startTime)
+        .then((actual) => {
+          options.onActualStartTime?.(actual)
+        })
+        .catch(() => {
+          options.onActualStartTime?.(options.startTime!)
+        })
+    }
 
     proc.stderr?.on('data', (data) => {
       const line = data.toString()
@@ -204,6 +217,57 @@ export class TranscoderService {
     })
 
     return { process: proc, stdout: proc.stdout! }
+  }
+
+  /**
+   * Fast probe (<20ms) to detect the exact keyframe timestamp FFmpeg snaps to when seeking.
+   */
+  public async probeKeyframeTimestamp(inputUrl: string, seekTime: number): Promise<number> {
+    if (!this.hasFfmpeg || !seekTime || seekTime <= 0) return 0
+
+    return new Promise((resolve) => {
+      const proc = spawn(this.ffmpegPath, [
+        '-hide_banner',
+        '-ss',
+        String(seekTime),
+        '-i',
+        inputUrl,
+        '-map',
+        '0:v:0',
+        '-c',
+        'copy',
+        '-frames:v',
+        '1',
+        '-f',
+        'null',
+        '-'
+      ])
+
+      let stderr = ''
+      proc.stderr?.on('data', (d) => {
+        stderr += d.toString()
+      })
+      proc.on('close', () => {
+        const match = stderr.match(/time=(-?\d+):(\d+):(\d+\.\d+)/)
+        if (match) {
+          const isNegative = match[1].includes('-')
+          const hours = Math.abs(parseInt(match[1], 10))
+          const mins = parseInt(match[2], 10)
+          const secs = parseFloat(match[3])
+          const totalSecs = hours * 3600 + mins * 60 + secs
+          const diff = isNegative ? -totalSecs : totalSecs
+          const actual = Math.max(0, seekTime + diff)
+          log.info({ requested: seekTime, diff, actual }, 'Detected exact keyframe seek alignment')
+          resolve(actual)
+        } else {
+          resolve(seekTime)
+        }
+      })
+      proc.on('error', (err) => {
+        log.warn({ err }, 'Failed to probe keyframe timestamp, falling back to seekTime')
+        resolve(seekTime)
+      })
+    })
   }
 
   /**

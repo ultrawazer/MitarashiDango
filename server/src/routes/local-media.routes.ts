@@ -6,6 +6,7 @@ export function createLocalMediaRouter(): Router {
 
   // Video and subtitle streaming
   router.get('/local-media/stream/:fileId', localMediaController.streamVideo)
+  router.get('/local-media/stream-start-time', localMediaController.getStreamStartTime)
   router.get('/local-media/subtitle/:fileId/:trackIndex', localMediaController.streamSubtitle)
 
   // Shoko artwork proxy

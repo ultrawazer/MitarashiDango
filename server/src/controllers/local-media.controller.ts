@@ -32,6 +32,7 @@ export class LocalMediaController {
   private activeRemuxStreams = new Map<string, ChildProcess>()
   private activeSubtitleJobs = new Map<string, SubtitleJob>()
   private clientActiveSubtitle = new Map<string, string>()
+  private activeStreamActualStartTime = new Map<string, { requestedStartTime: number; actualStartTime: number }>()
   /**
    * Checks if a local file needs FFmpeg remuxing for browser playback.
    * Returns false for MP4/WebM with browser-compatible codecs (H.264/HEVC + AAC/MP3/Opus).
@@ -123,7 +124,8 @@ export class LocalMediaController {
       }
 
       if (shouldRemux && hasFfmpeg) {
-        const clientKey = `${req.ip || 'default'}`
+        const sessionId = req.query.sessionId as string | undefined
+        const clientKey = sessionId ? `session_${sessionId}` : `ip_${req.ip || 'default'}`
         const existingProcess = this.activeRemuxStreams.get(clientKey)
         if (existingProcess) {
           log.info({ clientKey }, 'Terminating previous active FFmpeg stream for client')
@@ -141,6 +143,13 @@ export class LocalMediaController {
           transcodeVideo,
           hwAccel,
           startTime,
+          onActualStartTime: (actual) => {
+            log.info({ clientKey, requested: startTime, actual }, 'Detected actual stream start keyframe timestamp')
+            this.activeStreamActualStartTime.set(clientKey, {
+              requestedStartTime: startTime || 0,
+              actualStartTime: actual,
+            })
+          },
         })
 
         if (!remux) {
@@ -175,6 +184,11 @@ export class LocalMediaController {
           try {
             remux.process.kill('SIGKILL')
           } catch {}
+          setTimeout(() => {
+            if (!this.activeRemuxStreams.has(clientKey)) {
+              this.activeStreamActualStartTime.delete(clientKey)
+            }
+          }, 30000)
         })
 
         return
@@ -230,6 +244,33 @@ export class LocalMediaController {
         res.status(500).send('Video streaming error')
       }
     }
+  }
+
+  public getStreamStartTime = async (req: Request, res: Response): Promise<void> => {
+    const sessionId = req.query.sessionId as string | undefined
+    const clientKey = sessionId ? `session_${sessionId}` : `ip_${req.ip || 'default'}`
+    
+    let info = this.activeStreamActualStartTime.get(clientKey)
+    if (info && info.actualStartTime > 0) {
+      res.json(info)
+      return
+    }
+
+    // If remux stream is spinning up, wait up to 1000ms for FFmpeg to emit the first keyframe time
+    const startWait = Date.now()
+    while (Date.now() - startWait < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      info = this.activeStreamActualStartTime.get(clientKey)
+      if (info && info.actualStartTime > 0) {
+        res.json(info)
+        return
+      }
+      if (!this.activeRemuxStreams.has(clientKey) && !info) {
+        break
+      }
+    }
+
+    res.json(info || { requestedStartTime: 0, actualStartTime: 0 })
   }
 
   public streamSubtitle = async (req: Request, res: Response): Promise<void> => {

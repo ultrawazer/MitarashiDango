@@ -41,7 +41,7 @@ import AnimeMetaDetails from '../components/anime/AnimeMetaDetails'
 import SynopsisText from '../components/anime/SynopsisText'
 import QueueOptionsButton from '../components/anime/QueueOptionsButton'
 import { useSetting } from '../hooks/useSettings'
-import { parseVttCue } from '../lib/vtt-parser'
+import { parseVttCue, type ParsedCue } from '../lib/vtt-parser'
 
 const Player: React.FC = () => {
   const { id: showId, episodeNumber } = useParams<{ id: string; episodeNumber?: string }>()
@@ -114,6 +114,16 @@ const Player: React.FC = () => {
     }
   }, [state.selectedLink?.link])
 
+  const playerSessionIdRef = useRef(Math.random().toString(36).substring(2))
+  const currentStreamSessionIdRef = useRef<string>('')
+  const [actualStreamStartTime, setActualStreamStartTime] = useState<number | null>(null)
+
+  useEffect(() => {
+    setActualStreamStartTime(null)
+  }, [state.selectedLink?.link])
+
+  const effectiveStreamStartTime = actualStreamStartTime !== null ? actualStreamStartTime : streamStartTime
+
   const player = useVideoPlayer({
     skipIntervals: state.skipIntervals,
     showId,
@@ -122,7 +132,7 @@ const Player: React.FC = () => {
     sourceType: state.selectedSource?.type,
     showMeta: memoizedShowMeta,
     knownDuration: state.selectedSource?.duration || (state.showMeta?.episodeDuration ? Number(state.showMeta.episodeDuration) * 60 : undefined),
-    streamStartTime,
+    streamStartTime: effectiveStreamStartTime,
   })
   const { refs, actions } = player
   const actionsRef = useRef(actions)
@@ -138,6 +148,35 @@ const Player: React.FC = () => {
 
   const upscalerCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const subtitleOverlayRef = useRef<HTMLDivElement | null>(null)
+  const parsedSubtitlesCacheRef = useRef<Map<string, ParsedCue[]>>(new Map())
+
+  useEffect(() => {
+    parsedSubtitlesCacheRef.current.clear()
+  }, [showId, episodeNumber])
+
+  const populateTextTrackCues = useCallback(
+    (textTrack: TextTrack, cues: ParsedCue[], startTimeOffset: number) => {
+      if (textTrack.cues) {
+        const existing = Array.from(textTrack.cues)
+        for (const c of existing) {
+          try {
+            textTrack.removeCue(c)
+          } catch {}
+        }
+      }
+
+      for (const cue of cues) {
+        const adjustedStart = Math.max(0, cue.start - startTimeOffset)
+        const adjustedEnd = cue.end - startTimeOffset
+        if (adjustedEnd > 0) {
+          try {
+            textTrack.addCue(new VTTCue(adjustedStart, adjustedEnd, cue.text))
+          } catch {}
+        }
+      }
+    },
+    []
+  )
 
   const [anime4kProfile, setAnime4kProfile] = useState<Anime4KProfile>(() => {
     return (localStorage.getItem('anime4kProfile') as Anime4KProfile) || 'balanced'
@@ -387,7 +426,18 @@ const Player: React.FC = () => {
       (proxiedUrl.startsWith('/') && !proxiedUrl.startsWith('/api/proxy'))
     )
 
-    if (!isLocalStream && !proxiedUrl.startsWith('/api/proxy')) {
+    if (isLocalStream) {
+      try {
+        const u = new URL(proxiedUrl, window.location.origin)
+        let sid = u.searchParams.get('sessionId')
+        if (!sid) {
+          sid = `${playerSessionIdRef.current}_${Date.now()}`
+          u.searchParams.set('sessionId', sid)
+          proxiedUrl = `${u.pathname}?${u.searchParams.toString()}`
+        }
+        currentStreamSessionIdRef.current = sid
+      } catch {}
+    } else if (!proxiedUrl.startsWith('/api/proxy')) {
       proxiedUrl = `/api/proxy?url=${encodeURIComponent(proxiedUrl)}`
       if (state.selectedLink.headers?.Referer) {
         proxiedUrl += `&referer=${encodeURIComponent(state.selectedLink.headers.Referer)}`
@@ -483,6 +533,29 @@ const Player: React.FC = () => {
           console.warn('Autoplay was prevented:', error)
           actionsRef.current.setShowControls(true)
         })
+      }
+
+      if (isLocalStream && streamStartTime > 0) {
+        const sid = currentStreamSessionIdRef.current || playerSessionIdRef.current
+        const queryActualStartTime = (retryCount = 0) => {
+          if (currentStreamSessionIdRef.current && currentStreamSessionIdRef.current !== sid) return
+          fetch(`/api/local-media/stream-start-time?sessionId=${encodeURIComponent(sid)}`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+              if (currentStreamSessionIdRef.current && currentStreamSessionIdRef.current !== sid) return
+              if (data && typeof data.actualStartTime === 'number' && data.actualStartTime > 0) {
+                setActualStreamStartTime(data.actualStartTime)
+              } else if (retryCount < 3) {
+                setTimeout(() => queryActualStartTime(retryCount + 1), 250)
+              }
+            })
+            .catch(() => {
+              if (retryCount < 3) {
+                setTimeout(() => queryActualStartTime(retryCount + 1), 250)
+              }
+            })
+        }
+        queryActualStartTime()
       }
     }
 
@@ -1007,7 +1080,7 @@ const Player: React.FC = () => {
     }
   }, [player.state.activeSubtitleTrack, player.state.availableSubtitles, refs.videoRef])
 
-  // Progressive WebVTT cue streaming for local media subtitles (Option A + B)
+  // Progressive WebVTT cue streaming for local media subtitles (Option A + B) with seek offset support
   useEffect(() => {
     const video = refs.videoRef.current
     if (!video || player.state.availableSubtitles.length === 0) return
@@ -1034,16 +1107,38 @@ const Player: React.FC = () => {
       return
     }
 
-    if (activeTrackEl.dataset.loaded === 'true' || activeTrackEl.dataset.loading === 'true') {
+    const subUrl = activeTrackEl.dataset.subUrl
+    const textTrack = activeTrackEl.track
+    if (!textTrack) return
+
+    const currentOffsetStr = String(effectiveStreamStartTime)
+    const cachedCues = parsedSubtitlesCacheRef.current.get(subUrl)
+
+    // If cues are already cached in memory, instantly re-populate with current effectiveStreamStartTime
+    if (cachedCues && cachedCues.length > 0) {
+      if (activeTrackEl.dataset.streamStartTime !== currentOffsetStr) {
+        populateTextTrackCues(textTrack, cachedCues, effectiveStreamStartTime)
+        activeTrackEl.dataset.streamStartTime = currentOffsetStr
+        activeTrackEl.dataset.loaded = 'true'
+        activeTrackEl.dataset.loading = 'false'
+      }
+      return
+    }
+
+    if (
+      activeTrackEl.dataset.loading === 'true' ||
+      (activeTrackEl.dataset.loaded === 'true' && activeTrackEl.dataset.streamStartTime === currentOffsetStr)
+    ) {
       return
     }
 
     const abortController = new AbortController()
     activeTrackEl.dataset.loading = 'true'
+    activeTrackEl.dataset.streamStartTime = currentOffsetStr
 
     const streamCues = async () => {
+      const collectedCues: ParsedCue[] = []
       try {
-        const subUrl = activeTrackEl.dataset.subUrl!
         const res = await fetch(subUrl, { signal: abortController.signal })
         if (!res.ok || !res.body) {
           throw new Error(`Subtitle HTTP ${res.status}`)
@@ -1052,7 +1147,6 @@ const Player: React.FC = () => {
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
-        const textTrack = activeTrackEl.track
 
         while (true) {
           const { done, value } = await reader.read()
@@ -1062,23 +1156,34 @@ const Player: React.FC = () => {
           buffer = parts.pop() || ''
           for (const part of parts) {
             const cueData = parseVttCue(part)
-            if (cueData && textTrack) {
+            if (cueData) {
+              collectedCues.push(cueData)
+              const adjustedStart = Math.max(0, cueData.start - effectiveStreamStartTime)
+              const adjustedEnd = cueData.end - effectiveStreamStartTime
+              if (adjustedEnd > 0) {
+                try {
+                  textTrack.addCue(new VTTCue(adjustedStart, adjustedEnd, cueData.text))
+                } catch {}
+              }
+            }
+          }
+        }
+
+        if (buffer.trim()) {
+          const cueData = parseVttCue(buffer)
+          if (cueData) {
+            collectedCues.push(cueData)
+            const adjustedStart = Math.max(0, cueData.start - effectiveStreamStartTime)
+            const adjustedEnd = cueData.end - effectiveStreamStartTime
+            if (adjustedEnd > 0) {
               try {
-                textTrack.addCue(new VTTCue(cueData.start, cueData.end, cueData.text))
+                textTrack.addCue(new VTTCue(adjustedStart, adjustedEnd, cueData.text))
               } catch {}
             }
           }
         }
 
-        if (buffer.trim() && textTrack) {
-          const cueData = parseVttCue(buffer)
-          if (cueData) {
-            try {
-              textTrack.addCue(new VTTCue(cueData.start, cueData.end, cueData.text))
-            } catch {}
-          }
-        }
-
+        parsedSubtitlesCacheRef.current.set(subUrl, collectedCues)
         activeTrackEl.dataset.loaded = 'true'
         activeTrackEl.dataset.loading = 'false'
       } catch (err: any) {
@@ -1097,7 +1202,13 @@ const Player: React.FC = () => {
         activeTrackEl.dataset.loading = 'false'
       }
     }
-  }, [player.state.activeSubtitleTrack, player.state.availableSubtitles, refs.videoRef])
+  }, [
+    player.state.activeSubtitleTrack,
+    player.state.availableSubtitles,
+    refs.videoRef,
+    effectiveStreamStartTime,
+    populateTextTrackCues,
+  ])
 
   useEffect(() => {
     const styleId = 'dynamic-subtitle-styles'
@@ -1721,6 +1832,7 @@ const Player: React.FC = () => {
                     anime4kProfile={anime4kProfile}
                     onAnime4kProfileChange={handleAnime4kProfileChange}
                     anime4kInitializing={isAnime4kInitializing}
+                    actualStreamStartTime={actualStreamStartTime}
                   />
                 )}{' '}
               {state.selectedSource?.type !== 'iframe' && (
