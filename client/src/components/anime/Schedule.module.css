@@ -58,7 +58,7 @@
 .daySelector {
   display: flex;
   overflow-x: auto;
-  padding: var(--space-2) var(--space-8);
+  padding: var(--space-2-5) var(--space-8);
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   width: 100%;
@@ -114,7 +114,8 @@
     font-size: 10px !important;
   }
 
-  .dayBtn.active {
+  .dayBtn.active,
+  .dayBtn.active:focus {
     transform: translateY(-2px) !important;
   }
 }
@@ -142,11 +143,20 @@
   transform: translateY(-2px);
 }
 
-.dayBtn.active {
+.dayBtn.active,
+.dayBtn.active:focus,
+.dayBtn.active:focus:not(:focus-visible) {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
-  box-shadow: 0 8px 20px var(--accent-glow);
+  box-shadow: 0 4px 12px -2px var(--accent-glow) !important;
+  transform: translateY(-4px);
+}
+
+.dayBtn.active:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
   transform: translateY(-4px);
 }
 

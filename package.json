@@ -1,6 +1,6 @@
 {
-  "name": "@serifpersia/dango",
-  "version": "2.8.3",
+  "name": "@serifpersia&&Ultrawazer/MitarashiDango",
+  "version": "2.9.0",
   "description": "A web application for watching anime.",
   "main": "orchestrator.js",
   "workspaces": [
@@ -9,7 +9,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/serifpersia/dango.git"
+    "url": "git+https://github.com/Ultrawazer/MitarashiDango.git"
   },
   "bin": {
     "dango": "orchestrator.js"
