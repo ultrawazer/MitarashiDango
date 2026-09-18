@@ -7,6 +7,7 @@ import layoutStyles from './PlayerPageLayout.module.css'
 import {
   FaCheck,
   FaPlus,
+  FaPlay,
   FaChevronDown,
   FaChevronUp,
   FaBackward,
@@ -150,9 +151,134 @@ const Player: React.FC = () => {
   const subtitleOverlayRef = useRef<HTMLDivElement | null>(null)
   const parsedSubtitlesCacheRef = useRef<Map<string, ParsedCue[]>>(new Map())
 
+  type SubtitleLoadingStatus = 'idle' | 'loading' | 'ready' | 'error'
+  const [subtitleStatus, setSubtitleStatus] = useState<SubtitleLoadingStatus>('idle')
+  const [isVideoReady, setIsVideoReady] = useState(false)
+  const [bypassSubtitleWait, setBypassSubtitleWait] = useState(false)
+
+  const subtitleStatusRef = useRef<SubtitleLoadingStatus>('idle')
+  subtitleStatusRef.current = subtitleStatus
+  const bypassSubtitleWaitRef = useRef(false)
+  bypassSubtitleWaitRef.current = bypassSubtitleWait
+
+  const teardownVideoSubtitles = useCallback((video: HTMLVideoElement | null) => {
+    if (!video) return
+
+    setSubtitleStatus('idle')
+    setIsVideoReady(false)
+    setBypassSubtitleWait(false)
+
+    // 1. Remove all track DOM elements and disable them
+    const trackElements = Array.from(video.querySelectorAll('track'))
+    trackElements.forEach((el) => {
+      if (el.track) {
+        try {
+          el.track.mode = 'disabled'
+        } catch {
+          // ignore
+        }
+      }
+      el.remove()
+    })
+
+    // 2. Disable and empty any remaining TextTracks in video.textTracks
+    if (video.textTracks) {
+      Array.from(video.textTracks).forEach((track) => {
+        try {
+          track.mode = 'disabled'
+        } catch {
+          // ignore
+        }
+        if (track.cues) {
+          const cues = Array.from(track.cues)
+          for (const cue of cues) {
+            try {
+              track.removeCue(cue)
+            } catch {
+              // ignore
+            }
+          }
+        }
+      })
+    }
+
+    // 3. Clear custom subtitle overlay if active
+    if (subtitleOverlayRef.current) {
+      subtitleOverlayRef.current.innerHTML = ''
+    }
+  }, [])
+
   useEffect(() => {
     parsedSubtitlesCacheRef.current.clear()
-  }, [showId, episodeNumber])
+    teardownVideoSubtitles(refs.videoRef.current)
+    actionsRef.current.setAvailableSubtitles([])
+    setSubtitleStatus('idle')
+    setIsVideoReady(false)
+    setBypassSubtitleWait(false)
+  }, [showId, episodeNumber, refs.videoRef, teardownVideoSubtitles])
+
+  const handlePlayAnyway = useCallback(() => {
+    setBypassSubtitleWait(true)
+    const video = refs.videoRef.current
+    if (video && video.paused) {
+      video.play().catch((err) => {
+        console.warn('Play anyway failed:', err)
+        actionsRef.current.setShowControls(true)
+      })
+    }
+  }, [refs.videoRef])
+
+  useEffect(() => {
+    if (!isVideoReady || bypassSubtitleWait) return
+
+    if (subtitleStatus === 'ready' || subtitleStatus === 'error') {
+      const videoElement = refs.videoRef.current
+      if (!videoElement) return
+
+      const shouldAutoPlay = !(showResumeModalRef.current && resumeTimeRef.current > 5)
+      if (shouldAutoPlay && videoElement.paused) {
+        videoElement.play().catch((error) => {
+          console.warn('Autoplay after subtitle load prevented:', error)
+          actionsRef.current.setShowControls(true)
+        })
+      }
+    }
+  }, [subtitleStatus, isVideoReady, bypassSubtitleWait, refs.videoRef])
+
+  const subtitlesEnabledPreference = localStorage.getItem('playerSubtitlesEnabled') !== 'false'
+  const isVideoLoadingState = state.loadingShowData || state.loadingVideo
+  const isWaitingForSubtitles =
+    !isVideoLoadingState &&
+    isVideoReady &&
+    subtitleStatus === 'loading' &&
+    !bypassSubtitleWait &&
+    !state.showResumeModal &&
+    subtitlesEnabledPreference &&
+    player.state.activeSubtitleTrack !== 'off' &&
+    Boolean(state.selectedSource?.subtitles?.length) &&
+    Boolean(refs.videoRef.current ? refs.videoRef.current.paused : true)
+
+  useEffect(() => {
+    if (isWaitingForSubtitles) {
+      const timer = setTimeout(() => {
+        handlePlayAnyway()
+      }, 8000)
+      return () => clearTimeout(timer)
+    }
+  }, [isWaitingForSubtitles, handlePlayAnyway])
+
+  useEffect(() => {
+    if (!isWaitingForSubtitles) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault()
+        e.stopPropagation()
+        handlePlayAnyway()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [isWaitingForSubtitles, handlePlayAnyway])
 
   const populateTextTrackCues = useCallback(
     (textTrack: TextTrack, cues: ParsedCue[], startTimeOffset: number) => {
@@ -406,6 +532,7 @@ const Player: React.FC = () => {
         hlsInstance.current.destroy()
         hlsInstance.current = null
       }
+      teardownVideoSubtitles(videoElement)
       try {
         videoElement.pause()
         videoElement.removeAttribute('src')
@@ -459,9 +586,7 @@ const Player: React.FC = () => {
     videoElement.removeAttribute('src')
     videoElement.load()
 
-    while (videoElement.firstChild) {
-      videoElement.removeChild(videoElement.firstChild)
-    }
+    teardownVideoSubtitles(videoElement)
 
     if (resumeTimeRef.current > 5 && !showResumeModalRef.current) {
       seekToTimeRef.current = resumeTimeRef.current
@@ -471,6 +596,17 @@ const Player: React.FC = () => {
 
     if (state.selectedSource.subtitles) {
       const subtitlesEnabled = localStorage.getItem('playerSubtitlesEnabled') !== 'false'
+      const hasEnabledSubtitles =
+        subtitlesEnabled &&
+        state.selectedSource.subtitles.length > 0 &&
+        player.state.activeSubtitleTrack !== 'off'
+
+      if (hasEnabledSubtitles) {
+        setSubtitleStatus('loading')
+      } else {
+        setSubtitleStatus('idle')
+      }
+
       state.selectedSource.subtitles.forEach((sub) => {
         const track = document.createElement('track')
         track.kind = 'subtitles'
@@ -499,6 +635,8 @@ const Player: React.FC = () => {
               }
             }
             track.src = subUrl
+            track.addEventListener('load', () => setSubtitleStatus('ready'), { once: true })
+            track.addEventListener('error', () => setSubtitleStatus('error'), { once: true })
           }
         }
 
@@ -517,6 +655,8 @@ const Player: React.FC = () => {
         actionsRef.current.setActiveSubtitleTrack('off')
       }
       actionsRef.current.setAvailableSubtitles(state.selectedSource.subtitles)
+    } else {
+      setSubtitleStatus('idle')
     }
 
     const targetTime = seekToTimeRef.current
@@ -524,15 +664,30 @@ const Player: React.FC = () => {
 
     const handleLoaded = () => {
       actionsRef.current.onLoadedMetadata()
+      setIsVideoReady(true)
       if (targetTime > 0) {
         videoElement.currentTime = targetTime
       }
       const shouldAutoPlay = !(showResumeModalRef.current && resumeTimeRef.current > 5)
+
+      const subtitlesEnabled = localStorage.getItem('playerSubtitlesEnabled') !== 'false'
+      const hasSubtitles = Boolean(
+        subtitlesEnabled &&
+        player.state.activeSubtitleTrack !== 'off' &&
+        state.selectedSource?.subtitles?.length
+      )
+      const isSubtitleStillLoading =
+        hasSubtitles &&
+        subtitleStatusRef.current === 'loading' &&
+        !bypassSubtitleWaitRef.current
+
       if (shouldAutoPlay) {
-        videoElement.play().catch((error) => {
-          console.warn('Autoplay was prevented:', error)
-          actionsRef.current.setShowControls(true)
-        })
+        if (!isSubtitleStillLoading) {
+          videoElement.play().catch((error) => {
+            console.warn('Autoplay was prevented:', error)
+            actionsRef.current.setShowControls(true)
+          })
+        }
       }
 
       if (isLocalStream && streamStartTime > 0) {
@@ -623,13 +778,16 @@ const Player: React.FC = () => {
         hlsInstance.current.destroy()
         hlsInstance.current = null
       }
+      teardownVideoSubtitles(videoElement)
       try {
         videoElement.pause()
         videoElement.removeAttribute('src')
         videoElement.load()
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
-  }, [currentLinkStr, currentSourceType, isCurrentHls, refs.videoRef])
+  }, [currentLinkStr, currentSourceType, isCurrentHls, refs.videoRef, teardownVideoSubtitles])
 
   const handleVideoSourceError = useCallback(() => {
     if (hasAutoFallbackRef.current) return
@@ -1020,12 +1178,14 @@ const Player: React.FC = () => {
     const videoElement = refs.videoRef.current
     if (!videoElement) return
     const handleTracksChange = () => {
-      const tracks: SubtitleTrack[] = Array.from(videoElement.textTracks).map((t) => ({
-        label: t.label,
-        lang: t.language,
-        src: undefined,
-        mode: t.mode as 'showing' | 'hidden' | 'disabled',
-      }))
+      const tracks: SubtitleTrack[] = Array.from(videoElement.textTracks)
+        .filter((t) => t.mode !== 'disabled')
+        .map((t) => ({
+          label: t.label,
+          lang: t.language,
+          src: undefined,
+          mode: t.mode as 'showing' | 'hidden' | 'disabled',
+        }))
       setAvailableSubtitles(tracks)
     }
     videoElement.textTracks.addEventListener('addtrack', handleTracksChange)
@@ -1122,6 +1282,7 @@ const Player: React.FC = () => {
         activeTrackEl.dataset.loaded = 'true'
         activeTrackEl.dataset.loading = 'false'
       }
+      setSubtitleStatus('ready')
       return
     }
 
@@ -1129,16 +1290,31 @@ const Player: React.FC = () => {
       activeTrackEl.dataset.loading === 'true' ||
       (activeTrackEl.dataset.loaded === 'true' && activeTrackEl.dataset.streamStartTime === currentOffsetStr)
     ) {
+      if (activeTrackEl.dataset.loaded === 'true') {
+        setSubtitleStatus('ready')
+      }
       return
     }
 
     const abortController = new AbortController()
     activeTrackEl.dataset.loading = 'true'
     activeTrackEl.dataset.streamStartTime = currentOffsetStr
+    setSubtitleStatus('loading')
 
     const streamCues = async () => {
       const collectedCues: ParsedCue[] = []
       try {
+        if (textTrack.cues) {
+          const existing = Array.from(textTrack.cues)
+          for (const c of existing) {
+            try {
+              textTrack.removeCue(c)
+            } catch {
+              // ignore
+            }
+          }
+        }
+
         const res = await fetch(subUrl, { signal: abortController.signal })
         if (!res.ok || !res.body) {
           throw new Error(`Subtitle HTTP ${res.status}`)
@@ -1163,7 +1339,9 @@ const Player: React.FC = () => {
               if (adjustedEnd > 0) {
                 try {
                   textTrack.addCue(new VTTCue(adjustedStart, adjustedEnd, cueData.text))
-                } catch {}
+                } catch {
+                  // ignore
+                }
               }
             }
           }
@@ -1178,7 +1356,9 @@ const Player: React.FC = () => {
             if (adjustedEnd > 0) {
               try {
                 textTrack.addCue(new VTTCue(adjustedStart, adjustedEnd, cueData.text))
-              } catch {}
+              } catch {
+                // ignore
+              }
             }
           }
         }
@@ -1186,10 +1366,12 @@ const Player: React.FC = () => {
         parsedSubtitlesCacheRef.current.set(subUrl, collectedCues)
         activeTrackEl.dataset.loaded = 'true'
         activeTrackEl.dataset.loading = 'false'
+        setSubtitleStatus('ready')
       } catch (err: any) {
         if (err.name !== 'AbortError') {
           console.warn('[Player] Subtitle progressive stream error:', err)
           activeTrackEl.dataset.loading = 'false'
+          setSubtitleStatus('error')
         }
       }
     }
@@ -1203,6 +1385,8 @@ const Player: React.FC = () => {
       }
     }
   }, [
+    showId,
+    episodeNumber,
     player.state.activeSubtitleTrack,
     player.state.availableSubtitles,
     refs.videoRef,
@@ -1738,6 +1922,27 @@ const Player: React.FC = () => {
                 <div className={styles.dot}></div>
                 <div className={styles.dot}></div>
                 <div className={styles.dot}></div>
+              </div>
+            </div>
+          )}
+
+          {isWaitingForSubtitles && !state.showResumeModal && (
+            <div className={styles.subtitleLoadingOverlay}>
+              <div className={styles.subtitleLoadingCard}>
+                <div className={styles.loadingDots}>
+                  <div className={styles.dot}></div>
+                  <div className={styles.dot}></div>
+                  <div className={styles.dot}></div>
+                </div>
+                <span className={styles.subtitleLoadingText}>Loading subtitle...</span>
+                <button
+                  type="button"
+                  className={styles.playAnywayButton}
+                  onClick={handlePlayAnyway}
+                >
+                  <FaPlay size={10} />
+                  <span>Play anyway</span>
+                </button>
               </div>
             </div>
           )}

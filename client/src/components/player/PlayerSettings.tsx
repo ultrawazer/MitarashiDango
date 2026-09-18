@@ -88,16 +88,6 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
       <button className={styles.menuItem} onClick={() => setView('subtitle-style')}>
         <span>Subtitle Style</span>
       </button>
-      {anime4kSupported && (
-        <button className={styles.menuItem} onClick={() => setView('upscaler')} id="player-upscaler-btn">
-          <span>Upscaler (Anime4K)</span>
-          <span className={styles.currentValue}>
-            {anime4kEnabled
-              ? `${anime4kProfile.charAt(0).toUpperCase() + anime4kProfile.slice(1)}${anime4kInitializing ? ' (loading)' : ''}`
-              : 'Off'}
-          </span>
-        </button>
-      )}
       <button
         className={`${styles.menuItem} ${useNativeControls ? styles.selected : ''}`}
         onClick={() => {
@@ -109,6 +99,27 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
         <span>Native Controls</span>
         {useNativeControls && <FaCheck size={12} />}
       </button>
+      {anime4kSupported && (
+        <button
+          className={`${styles.menuItem} ${anime4kEnabled ? styles.selected : ''}`}
+          onClick={() => {
+            onAnime4kToggle?.()
+          }}
+          id="player-ai-upscaler-toggle-btn"
+        >
+          <span>AI Upscaler {anime4kInitializing ? '(Loading...)' : ''}</span>
+          {anime4kEnabled && <FaCheck size={12} />}
+        </button>
+      )}
+      {anime4kSupported && anime4kEnabled && (
+        <button
+          className={styles.menuItem}
+          onClick={() => setView('upscaler')}
+          id="player-upscaler-btn"
+        >
+          <span>Upscaler Settings</span>
+        </button>
+      )}
     </div>
   )
 
@@ -221,42 +232,53 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
   const renderUpscaler = () => (
     <div className={styles.menuContent}>
       <button
-        className={`${styles.menuItem} ${!anime4kEnabled ? styles.selected : ''}`}
-        onClick={() => {
-          if (anime4kEnabled) onAnime4kToggle?.()
-        }}
+        className={`${styles.menuItem} ${anime4kProfile === 'low' ? styles.selected : ''}`}
+        onClick={() => onAnime4kProfileChange?.('low')}
       >
-        <span>Off</span>
-        {!anime4kEnabled && <FaCheck size={12} />}
+        <div>
+          <div>Low</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+            Lightest, best for weaker GPUs
+          </div>
+        </div>
+        {anime4kProfile === 'low' && <FaCheck size={12} />}
       </button>
       <button
-        className={`${styles.menuItem} ${anime4kEnabled ? styles.selected : ''}`}
-        onClick={() => {
-          if (!anime4kEnabled) onAnime4kToggle?.()
-        }}
+        className={`${styles.menuItem} ${anime4kProfile === 'balanced' ? styles.selected : ''}`}
+        onClick={() => onAnime4kProfileChange?.('balanced')}
       >
-        <span>On {anime4kInitializing ? '(Initializing...)' : ''}</span>
-        {anime4kEnabled && <FaCheck size={12} />}
-      </button>
-      {anime4kEnabled && (
-        <div style={{ marginTop: '0.75rem', padding: '0 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Profile Preset</label>
-          <select
-            className={styles.presetSelect}
-            value={anime4kProfile}
-            onChange={(e) =>
-              onAnime4kProfileChange?.(
-                e.target.value as 'low' | 'balanced' | 'high' | 'denoise'
-              )
-            }
-          >
-            <option value="balanced">Balanced (Mode A)</option>
-            <option value="low">Fast / Low (Mode B)</option>
-            <option value="high">Quality / High (Mode AA)</option>
-            <option value="denoise">Denoise (Mode C)</option>
-          </select>
+        <div>
+          <div>Balanced</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+            Source + display aware
+          </div>
         </div>
-      )}
+        {anime4kProfile === 'balanced' && <FaCheck size={12} />}
+      </button>
+      <button
+        className={`${styles.menuItem} ${anime4kProfile === 'high' ? styles.selected : ''}`}
+        onClick={() => onAnime4kProfileChange?.('high')}
+      >
+        <div>
+          <div>High</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+            Aggressive, needs strong GPU
+          </div>
+        </div>
+        {anime4kProfile === 'high' && <FaCheck size={12} />}
+      </button>
+      <button
+        className={`${styles.menuItem} ${anime4kProfile === 'denoise' ? styles.selected : ''}`}
+        onClick={() => onAnime4kProfileChange?.('denoise')}
+      >
+        <div>
+          <div>Denoise</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+            Clean noisy/compressed sources
+          </div>
+        </div>
+        {anime4kProfile === 'denoise' && <FaCheck size={12} />}
+      </button>
     </div>
   )
 
@@ -273,7 +295,9 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
         <h3>
           {view === 'main'
             ? 'Settings'
-            : view.charAt(0).toUpperCase() + view.slice(1).replace('-', ' ')}
+            : view === 'upscaler'
+              ? 'Upscaler Settings'
+              : view.charAt(0).toUpperCase() + view.slice(1).replace('-', ' ')}
         </h3>
       </div>
 
