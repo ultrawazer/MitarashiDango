@@ -137,8 +137,8 @@ export class TranscoderService {
     // Input URL (Shoko VFS HTTP stream or local file path)
     args.push('-i', options.inputUrl)
 
-    // Map video stream 0
-    args.push('-map', '0:v:0')
+    // Map video stream (capital V matches real video streams and excludes embedded cover art / thumbnails)
+    args.push('-map', '0:V:0?')
 
     // Map specific audio track or default
     if (options.audioIndex !== undefined && options.audioIndex >= 0) {
@@ -162,14 +162,9 @@ export class TranscoderService {
           '5M'
         )
       } else if (mode === 'nvenc' && this.nvencVerified) {
-        args.push('-c:v', 'h264_nvenc', '-preset', 'p4', '-b:v', '5M')
-      } else if (mode === 'nvenc' && !this.nvencVerified) {
-        // NVENC detected but not verified — fall back to stream-copy
-        // (video is almost certainly H.264/HEVC which browsers can play)
-        log.info('NVENC not verified, falling back to video stream-copy')
-        args.push('-c:v', 'copy')
+        args.push('-c:v', 'h264_nvenc', '-pix_fmt', 'yuv420p', '-preset', 'p4', '-b:v', '5M')
       } else {
-        args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22')
+        args.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '22')
       }
     } else {
       // 0% CPU stream copy remux!
@@ -233,7 +228,7 @@ export class TranscoderService {
         '-i',
         inputUrl,
         '-map',
-        '0:v:0',
+        '0:V:0?',
         '-c',
         'copy',
         '-frames:v',

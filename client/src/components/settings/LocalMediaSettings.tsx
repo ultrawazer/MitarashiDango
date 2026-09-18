@@ -347,7 +347,7 @@ const LocalMediaSettings: React.FC = () => {
       <div className={styles.sectionCard}>
         <h3 className={styles.title}>Hardware Acceleration & Remuxing</h3>
         <p className={styles.subtitle}>
-          Controls how local MKV/MP4 files are remuxed or transcoded when streamed through the browser.
+          Controls how local media files (MKV, MP4, RMVB, RM, OGG, AVI) are remuxed or transcoded when streamed through the browser.
         </p>
 
         <div className={styles.formGroup}>

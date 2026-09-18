@@ -34,11 +34,11 @@ export class LocalMediaController {
   private clientActiveSubtitle = new Map<string, string>()
   private activeStreamActualStartTime = new Map<string, { requestedStartTime: number; actualStartTime: number }>()
   /**
-   * Checks if a local file needs FFmpeg remuxing for browser playback.
-   * Returns false for MP4/WebM with browser-compatible codecs (H.264/HEVC + AAC/MP3/Opus).
-   * Returns true for MKV/AVI/FLV containers or incompatible audio codecs (FLAC, DTS, TrueHD).
+   * Checks if a local file needs FFmpeg remuxing or video transcoding for browser playback.
+   * Returns shouldRemux: false for MP4/WebM with browser-compatible codecs (H.264 8-bit + AAC/MP3/Opus).
+   * Returns needsTranscodeVideo: true for non-browser codecs (XviD, DivX, msmpeg4v3, Hi10P 10-bit).
    */
-  private async needsRemuxForBrowser(fileId: number, db: any): Promise<boolean> {
+  private async checkStreamRequirements(fileId: number, db: any): Promise<{ shouldRemux: boolean; needsTranscodeVideo: boolean }> {
     try {
       const { client } = (shokoClient as any).getClient(db)
       const res = await client.get(`/api/v3/File/${fileId}`, {
@@ -46,42 +46,143 @@ export class LocalMediaController {
         timeout: 5000,
       })
       const file = res.data
-      if (!file) return true // unknown file, remux to be safe
+      if (!file) return { shouldRemux: true, needsTranscodeVideo: false }
+
+      let mediaInfo = file.MediaInfo
+      // Shoko v3 often separates MediaInfo under /api/v3/File/{fileId}/MediaInfo
+      if (!mediaInfo || (!mediaInfo.Video && !mediaInfo.MediaStreams?.Video)) {
+        try {
+          const miRes = await client.get(`/api/v3/File/${fileId}/MediaInfo`, { timeout: 5000 })
+          if (miRes.data) mediaInfo = miRes.data
+        } catch {
+          // ignore
+        }
+      }
 
       // Check container from file path or media info
       const locations = file.Locations || []
       const relativePath = locations[0]?.RelativePath || ''
-      const ext = relativePath.split('.').pop()?.toLowerCase() || ''
+      const rawExt = relativePath.split('.').pop() || mediaInfo?.FileExtension || ''
+      const ext = rawExt.toLowerCase().replace(/^\./, '')
 
       // Containers that browsers can play natively
       const browserSafeContainers = new Set(['mp4', 'm4v', 'webm', 'mov'])
-      if (!browserSafeContainers.has(ext)) {
-        // MKV, AVI, FLV, etc. — need remuxing
-        return true
+      let shouldRemux = !browserSafeContainers.has(ext)
+      let needsTranscodeVideo = false
+
+      // Container formats that cannot be stream-copied directly into browser fMP4 (must be transcoded to H.264)
+      const alwaysTranscodeContainers = new Set([
+        'rm', 'ram', 'rmvb', 'ra',
+        'ogv', 'ogg',
+        'wmv', 'asf',
+        'flv',
+      ])
+
+      if (alwaysTranscodeContainers.has(ext)) {
+        shouldRemux = true
+        needsTranscodeVideo = true
       }
 
-      // For MP4/WebM, check audio codec compatibility
-      const mediaInfo = file.MediaInfo
       if (mediaInfo) {
+        // 1. Inspect Video Stream: auto-detect non-browser video codecs & 10-bit profiles
+        const videoStreams = mediaInfo.Video || mediaInfo.MediaStreams?.Video || []
+        if (videoStreams.length > 0) {
+          const v = videoStreams[0]
+          const rawCodec = (typeof v.Codec === 'object' ? v.Codec?.Raw : v.Codec) || ''
+          const simpCodec = (typeof v.Codec === 'object' ? v.Codec?.Simplified : v.Codec) || ''
+          const formatName = (v.Format?.Name || '').toLowerCase()
+          const profile = (v.Format?.Profile || '').toLowerCase()
+          const bitDepth = v.BitDepth !== undefined ? Number(v.BitDepth) : 8
+
+          // Known legacy or non-browser codecs that CANNOT play in HTML5 <video>
+          const legacyCodecs = new Set([
+            'xvid', 'divx', 'div3', 'mp43', 'msmpeg4v3', 'msmpeg4v2', 'msmpeg4v1',
+            'mpeg4', 'mpeg2video', 'mpeg1video', 'wmv1', 'wmv2', 'wmv3', 'vc1',
+            'rv10', 'rv20', 'rv30', 'rv40', 'flv1', 'theora', 'dirac', 'vp3',
+          ])
+
+          const rawLower = String(rawCodec).toLowerCase()
+          const simpLower = String(simpCodec).toLowerCase()
+
+          const isLegacy =
+            legacyCodecs.has(rawLower) ||
+            legacyCodecs.has(simpLower) ||
+            rawLower.includes('xvid') ||
+            rawLower.includes('divx') ||
+            rawLower.includes('div3') ||
+            rawLower.includes('mp43') ||
+            rawLower.includes('rv10') ||
+            rawLower.includes('rv20') ||
+            rawLower.includes('rv30') ||
+            rawLower.includes('rv40') ||
+            rawLower.includes('real') ||
+            simpLower.includes('real') ||
+            rawLower.includes('theora') ||
+            simpLower.includes('theora') ||
+            rawLower.includes('dirac') ||
+            formatName.includes('realvideo') ||
+            formatName.includes('real video') ||
+            formatName.includes('theora') ||
+            formatName.includes('dirac') ||
+            formatName.includes('mpeg-4 visual') ||
+            formatName.includes('mpeg video')
+
+          // 10-bit H.264 (Hi10P) cannot be decoded by web browsers
+          const isHi10P =
+            (simpLower === 'h264' || rawLower === 'avc1' || formatName.includes('avc')) &&
+            (bitDepth === 10 || profile.includes('high 10') || profile.includes('hi10p'))
+
+          if (isLegacy || isHi10P || alwaysTranscodeContainers.has(ext)) {
+            shouldRemux = true
+            needsTranscodeVideo = true
+            log.info({ fileId, rawCodec, simpCodec, formatName, profile, bitDepth, ext }, 'Detected non-browser video format; forcing video transcode')
+          }
+        } else if (ext === 'ogg' || ext === 'ra') {
+          // Pure audio file in Ogg or RealAudio container: remux to AAC fMP4 without video stream
+          needsTranscodeVideo = false
+        }
+
+        // 2. Inspect Audio Streams for incompatible audio codecs
         const audioStreams = mediaInfo.Audio || mediaInfo.MediaStreams?.Audio || []
         const incompatibleAudioCodecs = new Set([
           'flac', 'dts', 'dts-hd', 'truehd', 'pcm', 'pcm_s16le', 'pcm_s24le',
           'pcm_s32le', 'pcm_f32le', 'eac3',
+          'cook', 'sipc', 'sipr', 'ra_144', 'ra_288', 'real_144', 'real_288',
+          'ralf', 'atrac', 'atrac1', 'atrac3', 'atrac3+', 'atrac3plus', 'realaudio',
+          'vorbis', 'speex',
         ])
 
         for (const audio of audioStreams) {
-          const codec = (audio.Codec || audio.Format || '').toLowerCase()
-          if (incompatibleAudioCodecs.has(codec)) {
-            return true // has incompatible audio, needs remux
+          const raw = (typeof audio.Codec === 'object' ? audio.Codec?.Raw : audio.Codec) || ''
+          const simp = (typeof audio.Codec === 'object' ? audio.Codec?.Simplified : audio.Codec) || ''
+          const format = (audio.Format?.Name || '').toLowerCase()
+          const codec = (simp || raw || format).toLowerCase()
+          if (
+            incompatibleAudioCodecs.has(codec) ||
+            codec.includes('cook') ||
+            codec.includes('sipc') ||
+            codec.includes('sipr') ||
+            codec.includes('ra_') ||
+            codec.includes('real') ||
+            codec.includes('atrac') ||
+            codec.includes('ralf') ||
+            codec.includes('vorbis') ||
+            codec.includes('speex')
+          ) {
+            shouldRemux = true
+            break
           }
         }
+      } else if (ext === 'avi') {
+        // Fallback for AVI container when mediaInfo is missing
+        shouldRemux = true
+        needsTranscodeVideo = true
       }
 
-      // MP4/WebM with compatible codecs — no remux needed
-      return false
+      return { shouldRemux, needsTranscodeVideo }
     } catch (err) {
       log.warn({ err: (err as Error).message, fileId }, 'Failed to check file media info, defaulting to remux')
-      return true // unknown, remux to be safe
+      return { shouldRemux: true, needsTranscodeVideo: false }
     }
   }
 
@@ -96,7 +197,7 @@ export class LocalMediaController {
 
       const audioIndexStr = req.query.audioIndex as string | undefined
       const audioIndex = audioIndexStr !== undefined ? parseInt(audioIndexStr, 10) : undefined
-      const transcodeVideo = req.query.transcode === 'true'
+      let transcodeVideo = req.query.transcode === 'true'
       const startTime = req.query.startTime ? parseFloat(req.query.startTime as string) : undefined
 
       const vfsUrl = shokoClient.getVfsStreamUrl(fileId, req.db)
@@ -112,14 +213,18 @@ export class LocalMediaController {
       // Smart container/codec detection: only remux when the browser can't play natively
       let shouldRemux = false
       if (!isDirectStream && hasFfmpeg) {
-        if (audioIndex !== undefined || transcodeVideo) {
-          // Explicit user request for audio track switch or transcode
+        const analysis = await this.checkStreamRequirements(fileId, req.db)
+        if (analysis.needsTranscodeVideo) {
+          transcodeVideo = true
+        }
+
+        if (audioIndex !== undefined || transcodeVideo || (startTime !== undefined && startTime > 0)) {
+          // Explicit user request for audio track switch, video transcode, or time seek
           shouldRemux = true
         } else if (req.query.remux === 'false') {
           shouldRemux = false
         } else {
-          // Auto-detect: check file container and codecs via Shoko media info
-          shouldRemux = await this.needsRemuxForBrowser(fileId, req.db)
+          shouldRemux = analysis.shouldRemux
         }
       }
 

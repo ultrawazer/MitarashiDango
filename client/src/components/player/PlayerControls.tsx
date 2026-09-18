@@ -205,6 +205,25 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
 
     if (selectedSource?.isLocal && selectedLink) {
       const video = refs.videoRef.current
+      if (!video) return
+
+      // Direct VFS stream check: if native file has full seekable duration and streamStartTime is 0,
+      // browser natively seeks anywhere in the file without restarting the HTTP connection!
+      const isDirectNativeSeekable =
+        streamStartTime === 0 &&
+        !selectedLink.link.includes('audioIndex=') &&
+        !selectedLink.link.includes('startTime=') &&
+        Number.isFinite(video.duration) &&
+        video.duration > 0 &&
+        video.seekable.length > 0 &&
+        video.seekable.end(video.seekable.length - 1) >= video.duration - 2
+
+      if (isDirectNativeSeekable) {
+        video.currentTime = targetTime
+        actions.sendProgressUpdate(false, true)
+        return
+      }
+
       const streamRelativeTarget = targetTime - streamStartTime
       let isBuffered = false
       if (streamRelativeTarget >= 0) {
@@ -330,9 +349,26 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
 
           if (selectedSource?.isLocal && selectedLink) {
             const video = refs.videoRef.current
+            if (!video) return
+
+            const isDirectNativeSeekable =
+              streamStartTime === 0 &&
+              !selectedLink.link.includes('audioIndex=') &&
+              !selectedLink.link.includes('startTime=') &&
+              Number.isFinite(video.duration) &&
+              video.duration > 0 &&
+              video.seekable.length > 0 &&
+              video.seekable.end(video.seekable.length - 1) >= video.duration - 2
+
+            if (isDirectNativeSeekable) {
+              video.currentTime = targetTime
+              actions.sendProgressUpdate(false, true)
+              return
+            }
+
             const streamRelativeTarget = targetTime - streamStartTime
             let isBuffered = false
-            if (video && streamRelativeTarget >= 0) {
+            if (streamRelativeTarget >= 0) {
               for (let i = 0; i < video.buffered.length; i++) {
                 if (streamRelativeTarget >= video.buffered.start(i) && streamRelativeTarget <= video.buffered.end(i)) {
                   isBuffered = true
@@ -341,7 +377,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
               }
             }
 
-            if (isBuffered && video) {
+            if (isBuffered) {
               video.currentTime = streamRelativeTarget
               actions.sendProgressUpdate(false, true)
             } else {
