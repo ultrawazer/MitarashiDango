@@ -29,9 +29,12 @@ import {
   waitForSync,
   getActiveProvider,
 } from './sync'
-import { createAuthRouter } from './routes/auth.routes'
-import { createLanAuthRouter } from './routes/lan-auth.routes'
-import { lanAuthMiddleware } from './app-auth'
+import { createUserAuthRouter } from './routes/user-auth.routes'
+import { createSyncAuthRouter } from './routes/sync-auth.routes'
+import { createAdminRouter } from './routes/admin.routes'
+import { authMiddleware } from './middleware/auth.middleware'
+import { initSystemDb, getSystemDb, getGlobalSetting, setGlobalSetting, listUsers } from './system-db'
+import { userDbManager, getPrimaryDb, setPrimaryDb } from './user-db-manager'
 import { createWatchlistRouter } from './routes/watchlist.routes'
 import { createDataRouter } from './routes/data.routes'
 import { createAsmrRouter } from './routes/asmr.routes'
@@ -41,12 +44,9 @@ import { createProxyRouter } from './routes/proxy.routes'
 import { createSettingsRouter } from './routes/settings.routes'
 import { createInsightsRouter } from './routes/insights.routes'
 import { createTranslateRouter } from './routes/translate.routes'
-import { createDiscordGatewayRouter } from './routes/discord-gateway.routes'
 import { createTrackerRouter } from './routes/tracker.routes'
 import { createFlareSolverrRouter } from './routes/flaresolverr.routes'
 import { flareSolverrService } from './services/flaresolverr.service'
-import { discordRPCService } from './discord-rpc'
-import { discordGatewayService } from './discord-gateway'
 import { SettingsRepository } from './repositories/settings.repository'
 import { requestContext } from './utils/request-context'
 import { checkAnilistStatus } from './lib/anilist'
@@ -92,7 +92,7 @@ app.use((req, res, next) => {
 // Extension Manager provides dynamic providers (with Shoko built-in)
 const apiCache = new NodeCache({ stdTTL: 3600 })
 
-let db: DatabaseWrapper
+let systemDb: DatabaseWrapper
 let isShuttingDown = false
 
 async function runSyncSequence(
@@ -126,8 +126,8 @@ async function runSyncSequence(
 
   let currentDb = database
   if (didDownload) {
-    db = await initializeDatabase(dbPath)
-    currentDb = db
+    currentDb = await initializeDatabase(dbPath)
+    setPrimaryDb(currentDb)
     logger.info('Database re-initialized after sync.')
   }
 
@@ -142,10 +142,6 @@ app.use((req, res, next) => {
   if (isShuttingDown) {
     return res.status(503).send('Server is shutting down...')
   }
-  if (!db) {
-    return res.status(503).send('Database initializing...')
-  }
-  req.db = db
   next()
 })
 
@@ -173,15 +169,15 @@ app.use(
 app.use(crossSiteProtectionMiddleware)
 app.use(express.json({ limit: '10mb' }))
 
-app.use('/api/auth', createLanAuthRouter())
-app.use(lanAuthMiddleware)
-
+app.use(authMiddleware)
+app.use('/api/auth', createUserAuthRouter())
 app.use(
   '/api/auth',
-  createAuthRouter((database) => runSyncSequence(database))
+  createSyncAuthRouter((database) => runSyncSequence(database))
 )
+app.use('/api/admin', createAdminRouter())
 
-const { router: watchlistRouter, stopDiscovery } = createWatchlistRouter(() => db)
+const { router: watchlistRouter, stopDiscovery } = createWatchlistRouter(getPrimaryDb)
 app.use('/api', watchlistRouter)
 app.use('/api', createDataRouter(apiCache, (name) => extensionManager.getAnimeProvider(name)))
 app.use('/api', createAsmrRouter(apiCache, (id) => extensionManager.getAsmrProvider(id)))
@@ -191,17 +187,16 @@ app.use('/api', createExtensionRouter(extensionManager))
 app.use('/api', createProxyRouter())
 app.use('/api', createInsightsRouter())
 app.use('/api', createTranslateRouter())
-app.use('/api', createDiscordGatewayRouter())
 app.use('/api', createTrackerRouter())
 app.use('/api', createLocalMediaRouter())
 app.use('/api', createFlareSolverrRouter())
 app.use(
   '/api',
   createSettingsRouter(
-    () => db,
+    getPrimaryDb,
     initializeDatabase,
     (newDb) => {
-      db = newDb
+      setPrimaryDb(newDb)
       shokoClient.setDb(newDb)
       flareSolverrService.setDb(newDb)
     }
@@ -246,17 +241,13 @@ app.use(
 )
 
 async function main() {
-  const dbName = CONFIG.IS_DEV ? CONFIG.DB_NAME_DEV : CONFIG.DB_NAME_PROD
-  const dbPath = path.join(CONFIG.ROOT, dbName)
-  const remoteFolder = CONFIG.IS_DEV ? CONFIG.REMOTE_FOLDER_DEV : CONFIG.REMOTE_FOLDER_PROD
+  systemDb = await initSystemDb()
+  logger.info('System database initialized')
 
-  db = await initializeDatabase(dbPath)
-  logger.info(`Database initialized at ${dbPath}`)
-
-  flareSolverrService.setDb(db)
+  flareSolverrService.setDb(systemDb)
   await extensionManager.init()
 
-  // Auto-seed missing configuration from environment variables (e.g. Docker / Unraid)
+  // Auto-seed missing configuration from environment variables into global_settings
   const envSeedKeys: [string, string | undefined][] = [
     ['shoko_url', process.env.SHOKO_URL || (CONFIG.SHOKO_URL && CONFIG.SHOKO_URL !== 'http://localhost' ? CONFIG.SHOKO_URL : undefined)],
     ['shoko_port', process.env.SHOKO_PORT || (CONFIG.SHOKO_PORT && CONFIG.SHOKO_PORT !== 8111 ? String(CONFIG.SHOKO_PORT) : undefined)],
@@ -270,9 +261,9 @@ async function main() {
   for (const [key, envVal] of envSeedKeys) {
     if (envVal !== undefined && envVal !== '') {
       try {
-        const existing = await SettingsRepository.getByKey(db, key)
-        if (!existing || !existing.value) {
-          await SettingsRepository.upsert(db, key, envVal)
+        const existing = getGlobalSetting(key)
+        if (!existing) {
+          setGlobalSetting(key, envVal)
         }
       } catch (err) {
         logger.debug({ err, key }, 'Skipped env seeding for key')
@@ -280,35 +271,39 @@ async function main() {
     }
   }
 
-  shokoClient.init(db)
-  await animeIdMapper.init(db)
+  shokoClient.init(systemDb)
+  await animeIdMapper.init(systemDb)
 
-  if (animeIdMapper.checkWeeklyUpdateDue(db)) {
+  if (animeIdMapper.checkWeeklyUpdateDue(systemDb)) {
     logger.info('Weekly offline database update is due on startup, starting background update...')
-    animeIdMapper.executeScheduledUpdate(db).catch((err) => {
+    animeIdMapper.executeScheduledUpdate(systemDb).catch((err) => {
       logger.warn({ err: err?.message }, 'Startup scheduled offline database update failed')
     })
   }
 
-  const rpcEnabledSetting = await SettingsRepository.getByKey(db, 'discordRPCEnabled')
-  const isRpcEnabled = rpcEnabledSetting ? rpcEnabledSetting.value === 'true' : true
-  await discordRPCService.setEnabled(isRpcEnabled)
-  discordGatewayService.setEnabled(isRpcEnabled)
+  // Pre-load primary admin db if admin exists
+  try {
+    const admins = listUsers().filter((u) => u.role === 'admin' && u.isActive === 1)
+    if (admins.length > 0) {
+      const adminDb = await userDbManager.getDb(admins[0].id)
+      setPrimaryDb(adminDb)
+    }
+  } catch (err) {
+    logger.debug({ err }, 'No admin db to preload on startup')
+  }
 
   checkAnilistStatus().catch(() => {})
 
   // Pre-warm FlareSolverr cookies in background (non-blocking)
-  flareSolverrService.preWarmProviders(db).catch((err) => {
+  flareSolverrService.preWarmProviders(systemDb).catch((err) => {
     logger.warn({ err: (err as Error).message }, 'FlareSolverr boot pre-warm failed')
   })
-  flareSolverrService.startPeriodicPreWarm(db)
+  flareSolverrService.startPeriodicPreWarm(systemDb)
 
   // Build AniDB → Shoko ID map in background for fast lookups
-  shokoClient.buildAnidbIdMap(db).catch((err) => {
+  shokoClient.buildAnidbIdMap(systemDb).catch((err) => {
     logger.warn({ err: (err as Error).message }, 'Shoko AniDB ID map build failed on boot')
   })
-
-  await runSyncSequence(db)
 
   if (!fs.existsSync(CONFIG.LOCAL_MANIFEST_PATH)) {
     fs.writeFileSync(CONFIG.LOCAL_MANIFEST_PATH, JSON.stringify({ version: 0 }))
@@ -330,11 +325,15 @@ async function main() {
   })
 
   const syncInterval = setInterval(async () => {
-    if (hasUnsyncedChanges) {
+    const currentPrimary = getPrimaryDb()
+    if (hasUnsyncedChanges && currentPrimary) {
       logger.info('Uploading accumulated database changes...')
       hasUnsyncedChanges = false
       try {
-        await syncUp(db, dbPath, remoteFolder)
+        const dbName = CONFIG.IS_DEV ? CONFIG.DB_NAME_DEV : CONFIG.DB_NAME_PROD
+        const dbPath = path.join(CONFIG.ROOT, dbName)
+        const remoteFolder = CONFIG.IS_DEV ? CONFIG.REMOTE_FOLDER_DEV : CONFIG.REMOTE_FOLDER_PROD
+        await syncUp(currentPrimary, dbPath, remoteFolder)
       } catch (err) {
         logger.error({ err }, 'Failed to upload database changes')
         hasUnsyncedChanges = true
@@ -343,9 +342,9 @@ async function main() {
   }, 300000)
 
   const offlineDbInterval = setInterval(() => {
-    if (animeIdMapper.checkWeeklyUpdateDue(db)) {
+    if (animeIdMapper.checkWeeklyUpdateDue(systemDb)) {
       logger.info('Weekly offline database update triggered by periodic schedule...')
-      animeIdMapper.executeScheduledUpdate(db).catch((err) => {
+      animeIdMapper.executeScheduledUpdate(systemDb).catch((err) => {
         logger.warn({ err: err?.message }, 'Interval scheduled offline database update failed')
       })
     }
@@ -353,7 +352,7 @@ async function main() {
 
   // Refresh Shoko AniDB → Shoko ID map every 60 minutes
   const shokoMapInterval = setInterval(() => {
-    shokoClient.buildAnidbIdMap(db).catch((err) => {
+    shokoClient.buildAnidbIdMap(systemDb).catch((err) => {
       logger.warn({ err: (err as Error).message }, 'Periodic Shoko AniDB ID map refresh failed')
     })
   }, 60 * 60 * 1000)
@@ -366,32 +365,34 @@ async function main() {
     clearInterval(offlineDbInterval)
     clearInterval(shokoMapInterval)
     flareSolverrService.stopPeriodicPreWarm()
-    discordRPCService.disconnect()
-    discordGatewayService.disconnect()
     await watcher.close()
 
     if (expressServer) {
       expressServer.close()
     }
 
-    if (hasUnsyncedChanges) {
+    const currentPrimary = getPrimaryDb()
+    if (hasUnsyncedChanges && currentPrimary) {
       logger.info('Sync on shutdown: uploading final database changes...')
       hasUnsyncedChanges = false
       try {
-        await syncUp(db, dbPath, remoteFolder)
+        const dbName = CONFIG.IS_DEV ? CONFIG.DB_NAME_DEV : CONFIG.DB_NAME_PROD
+        const dbPath = path.join(CONFIG.ROOT, dbName)
+        const remoteFolder = CONFIG.IS_DEV ? CONFIG.REMOTE_FOLDER_DEV : CONFIG.REMOTE_FOLDER_PROD
+        await syncUp(currentPrimary, dbPath, remoteFolder)
       } catch (e) {
         logger.error({ err: e }, 'Final sync on shutdown failed')
       }
     }
 
-    await waitForSync()
-
-    db.close(() => {
-      notifyServerExit()
-      if (signal === 'SIGUSR2') {
-        process.kill(process.pid, 'SIGUSR2')
-      }
-    })
+    userDbManager.closeAll()
+    try {
+      getSystemDb().close()
+    } catch {}
+    notifyServerExit()
+    if (signal === 'SIGUSR2') {
+      process.kill(process.pid, 'SIGUSR2')
+    }
   }
 
   process.on('SIGINT', () => shutdown('SIGINT'))

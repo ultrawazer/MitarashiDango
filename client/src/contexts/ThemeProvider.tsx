@@ -5,14 +5,16 @@ import { applyThemeToDocument, deriveThemeColors } from '../utils/themeUtils'
 import { useSetting, useUpdateSetting } from '../hooks/useSettings'
 
 const STORAGE_CUSTOM_THEMES_KEY = 'dango-custom-themes'
-const STORAGE_ACTIVE_THEME_KEY = 'dango-active-theme'
+const STORAGE_USER_THEME_KEY = 'dango-user-theme'
+const STORAGE_SERVER_THEME_KEY = 'dango-server-theme'
 
 interface ThemeProviderProps {
   children: React.ReactNode
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const { data: serverThemeSetting } = useSetting('activeTheme')
+  const { data: userThemeSetting } = useSetting('activeTheme')
+  const { data: serverThemeSetting } = useSetting('serverTheme')
   const updateSetting = useUpdateSetting({ silent: true })
 
   const [customThemes, setCustomThemes] = useState<Theme[]>(() => {
@@ -27,34 +29,55 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     return []
   })
 
-  const [activeThemeId, setActiveThemeId] = useState<string>(() => {
+  const [userThemeId, setUserThemeId] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_ACTIVE_THEME_KEY)
-      if (saved) return saved
+      return localStorage.getItem(STORAGE_USER_THEME_KEY) || 'server-default'
     } catch {
-      // Fallback to default
+      return 'server-default'
     }
-    return 'dango'
+  })
+
+  const [serverThemeId, setServerThemeId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(STORAGE_SERVER_THEME_KEY) || 'dango'
+    } catch {
+      return 'dango'
+    }
   })
 
   const [isLoaded, setIsLoaded] = useState<boolean>(false)
 
-  // Sync with server setting once available
+  // Sync with user setting from DB
   useEffect(() => {
-    if (serverThemeSetting && typeof serverThemeSetting === 'string') {
-      setActiveThemeId((prev) => {
-        if (prev !== serverThemeSetting) {
-          localStorage.setItem(STORAGE_ACTIVE_THEME_KEY, serverThemeSetting)
-          return serverThemeSetting
-        }
-        return prev
-      })
+    if (typeof userThemeSetting === 'string' && userThemeSetting) {
+      setUserThemeId(userThemeSetting)
+      try {
+        localStorage.setItem(STORAGE_USER_THEME_KEY, userThemeSetting)
+      } catch {}
+    }
+  }, [userThemeSetting])
+
+  // Sync with server setting from DB
+  useEffect(() => {
+    if (typeof serverThemeSetting === 'string' && serverThemeSetting) {
+      setServerThemeId(serverThemeSetting)
+      try {
+        localStorage.setItem(STORAGE_SERVER_THEME_KEY, serverThemeSetting)
+      } catch {}
     }
   }, [serverThemeSetting])
 
   const allThemes = useMemo(() => {
     return [...PRESET_THEMES, ...customThemes]
   }, [customThemes])
+
+  // Effective active theme: userTheme takes priority unless set to 'server-default'
+  const activeThemeId = useMemo(() => {
+    if (userThemeId && userThemeId !== 'server-default') {
+      return userThemeId
+    }
+    return serverThemeId || 'dango'
+  }, [userThemeId, serverThemeId])
 
   const activeTheme = useMemo(() => {
     return allThemes.find((t) => t.id === activeThemeId) || PRESET_THEMES[0]
@@ -66,15 +89,33 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     setIsLoaded(true)
   }, [activeTheme])
 
-  const setTheme = useCallback(
+  const setUserTheme = useCallback(
     (themeId: string) => {
-      setActiveThemeId(themeId)
+      setUserThemeId(themeId)
       try {
-        localStorage.setItem(STORAGE_ACTIVE_THEME_KEY, themeId)
+        localStorage.setItem(STORAGE_USER_THEME_KEY, themeId)
       } catch {}
       updateSetting.mutate({ key: 'activeTheme', value: themeId })
     },
     [updateSetting]
+  )
+
+  const setServerTheme = useCallback(
+    (themeId: string) => {
+      setServerThemeId(themeId)
+      try {
+        localStorage.setItem(STORAGE_SERVER_THEME_KEY, themeId)
+      } catch {}
+      updateSetting.mutate({ key: 'serverTheme', value: themeId })
+    },
+    [updateSetting]
+  )
+
+  const setTheme = useCallback(
+    (themeId: string) => {
+      setUserTheme(themeId)
+    },
+    [setUserTheme]
   )
 
   const createTheme = useCallback(
@@ -95,10 +136,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         return next
       })
 
-      setTheme(newTheme.id)
+      setUserTheme(newTheme.id)
       return newTheme.id
     },
-    [setTheme]
+    [setUserTheme]
   )
 
   const updateTheme = useCallback(
@@ -134,11 +175,11 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         return next
       })
 
-      if (activeThemeId === themeId) {
-        setTheme('dango')
+      if (userThemeId === themeId) {
+        setUserTheme('server-default')
       }
     },
-    [activeThemeId, setTheme]
+    [userThemeId, setUserTheme]
   )
 
   const value = useMemo(
@@ -146,13 +187,30 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       themes: allThemes,
       activeTheme,
       activeThemeId,
+      userThemeId,
+      serverThemeId,
       setTheme,
+      setUserTheme,
+      setServerTheme,
       createTheme,
       updateTheme,
       deleteTheme,
       isLoaded,
     }),
-    [allThemes, activeTheme, activeThemeId, setTheme, createTheme, updateTheme, deleteTheme, isLoaded]
+    [
+      allThemes,
+      activeTheme,
+      activeThemeId,
+      userThemeId,
+      serverThemeId,
+      setTheme,
+      setUserTheme,
+      setServerTheme,
+      createTheme,
+      updateTheme,
+      deleteTheme,
+      isLoaded,
+    ]
   )
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>

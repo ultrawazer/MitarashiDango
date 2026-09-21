@@ -12,7 +12,6 @@ import { ShowsMetaRepository } from '../repositories/shows-meta.repository'
 import { NotificationsRepository } from '../repositories/notifications.repository'
 import { QueueRepository } from '../repositories/queue.repository'
 import { SettingsRepository } from '../repositories/settings.repository'
-import { discordRPCService } from '../discord-rpc'
 import { requestContext } from '../utils/request-context'
 import { dbAll, dbGet } from '../utils/db-utils'
 import {
@@ -68,7 +67,7 @@ const NUDGE_THROTTLE_MS = 120 * 1000
 const SLOW_MAX_RUN_MS = 5 * 60 * 1000
 
 export class WatchlistController {
-  triggerDiscovery?: (force?: boolean) => boolean
+  triggerDiscovery?: (force?: boolean, targetDb?: DatabaseWrapper) => boolean
   private discoveryIntervalId: ReturnType<typeof setInterval> | null = null
   private lastExternalDiscoveryAt = 0
   private discoveryBusy = false
@@ -125,16 +124,35 @@ export class WatchlistController {
       return null
     }
 
-    const runDiscovery = async (fast = false): Promise<void> => {
+    const runDiscovery = async (fast = false, customDb?: DatabaseWrapper): Promise<void> => {
       if (this.discoveryBusy || this.stopped) return
       this.discoveryBusy = true
       this.discoveryState = 'running'
       this.discoveryTotal = 0
       this.discoveryDone = 0
 
-      const db = getDb()
-      if (!db || db.isClosedCheck()) {
+      const db = customDb || getDb()
+      if (!db || typeof db.isClosedCheck !== 'function' || db.isClosedCheck()) {
         this.discoveryBusy = false
+        this.discoveryState = 'idle'
+        return
+      }
+
+      // Guard: Ensure watchlist table actually exists in the target database
+      try {
+        const table = db.get<{ name: string }>(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='watchlist'`
+        )
+        if (!table) {
+          logger.debug('Watchlist table does not exist in target db; skipping discovery')
+          this.discoveryBusy = false
+          this.discoveryState = 'idle'
+          return
+        }
+      } catch (err) {
+        logger.debug({ err }, 'Failed checking for watchlist table; skipping discovery')
+        this.discoveryBusy = false
+        this.discoveryState = 'idle'
         return
       }
 
@@ -319,12 +337,12 @@ export class WatchlistController {
       }
     }
 
-    this.triggerDiscovery = (force = false) => {
+    this.triggerDiscovery = (force = false, targetDb?: DatabaseWrapper) => {
       if (this.stopped || this.discoveryBusy) return false
       const now = Date.now()
       if (!force && now - this.lastExternalDiscoveryAt < NUDGE_THROTTLE_MS) return false
       this.lastExternalDiscoveryAt = now
-      runDiscovery(force)
+      runDiscovery(force, targetDb)
       return true
     }
 
@@ -639,17 +657,6 @@ export class WatchlistController {
       displayName = nativeName
     }
 
-    discordRPCService.updatePresence({
-      title: displayName,
-      episode: String(episodeNumber),
-      totalEpisodes: episodeCount ? String(episodeCount) : undefined,
-      currentTime: currentTime || 0,
-      duration: duration || 0,
-      thumbnail: showThumbnail || '',
-      isPlaying: isPlaying !== false,
-      sessionId,
-      isAdult,
-    })
 
     const genresStr = Array.isArray(genres) ? JSON.stringify(genres) : genres
     const anilistId = /^\d+$/.test(showId)

@@ -35,7 +35,11 @@ export interface ThemeContextValue {
   themes: Theme[]
   activeTheme: Theme
   activeThemeId: string
+  userThemeId: string
+  serverThemeId: string
   setTheme: (themeId: string) => void
+  setUserTheme: (themeId: string) => void
+  setServerTheme: (themeId: string) => void
   createTheme: (input: CustomThemeInput) => string
   updateTheme: (themeId: string, input: CustomThemeInput) => void
   deleteTheme: (themeId: string) => void

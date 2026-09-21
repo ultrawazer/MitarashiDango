@@ -11,9 +11,9 @@ import { DatabaseWrapper } from '../db'
 import { SettingsRepository } from '../repositories/settings.repository'
 import { ShowsMetaRepository } from '../repositories/shows-meta.repository'
 import { getMachineId } from '../utils/machine-id'
-import { discordRPCService } from '../discord-rpc'
 import { animeIdMapper } from '../lib/anime-id-mapper'
 import { shokoClient } from '../lib/shoko.client'
+import { getSystemDb, getGlobalSetting, setGlobalSetting } from '../system-db'
 
 interface MalAnimeItem {
   series_animedb_id?: string[]
@@ -125,33 +125,59 @@ async function searchByTitleForMal(title: string): Promise<{
   return null
 }
 
+const GLOBAL_SETTING_KEYS = new Set([
+  'serverTheme',
+  'shoko_url',
+  'shoko_port',
+  'shoko_api_key',
+  'hwaccel_mode',
+  'flaresolverr_enabled',
+  'flaresolverr_url',
+  'flaresolverr_port',
+  'flaresolverr_max_timeout',
+  'offlineDbAutoUpdateEnabled',
+  'offlineDbLastCheckedAt',
+  'offlineDbLastUpdatedAt',
+  'offlineDbLastStatus',
+  'offlineDbLastMessage',
+])
+
 export class SettingsController {
   getSettings = async (req: Request, res: Response) => {
     try {
-      const row = await SettingsRepository.getByKey(req.db, req.query.key as string)
-      let value = row ? row.value : null
-      if (value === null || value === undefined) {
-        if (req.query.key === 'discordRPCEnabled') {
-          value = 'true'
-        } else if (req.query.key === 'discordRPCHideMature') {
-          value = 'true'
-        } else if (req.query.key === 'shoko_url') {
-          value = process.env.SHOKO_URL || CONFIG.SHOKO_URL || 'http://localhost'
-        } else if (req.query.key === 'shoko_port') {
-          value = process.env.SHOKO_PORT || (CONFIG.SHOKO_PORT ? String(CONFIG.SHOKO_PORT) : '8111')
-        } else if (req.query.key === 'shoko_api_key') {
-          value = process.env.SHOKO_API_KEY || CONFIG.SHOKO_API_KEY || ''
-        } else if (req.query.key === 'hwaccel_mode') {
-          value = process.env.HW_ACCEL || 'auto'
-        } else if (req.query.key === 'flaresolverr_enabled') {
-          value = process.env.FLARESOLVERR_ENABLED || 'false'
-        } else if (req.query.key === 'flaresolverr_url') {
-          value = process.env.FLARESOLVERR_URL || 'http://localhost'
-        } else if (req.query.key === 'flaresolverr_port') {
-          value = process.env.FLARESOLVERR_PORT || '8191'
-        }
+      const key = req.query.key as string
+      if (!key) {
+        res.status(400).json({ error: 'Missing setting key' })
+        return
       }
-      res.json({ value: value })
+
+      if (GLOBAL_SETTING_KEYS.has(key)) {
+        let value = getGlobalSetting(key)
+        if (value === null || value === undefined) {
+          if (key === 'shoko_url') {
+            value = process.env.SHOKO_URL || CONFIG.SHOKO_URL || 'http://localhost'
+          } else if (key === 'shoko_port') {
+            value = process.env.SHOKO_PORT || (CONFIG.SHOKO_PORT ? String(CONFIG.SHOKO_PORT) : '8111')
+          } else if (key === 'shoko_api_key') {
+            value = process.env.SHOKO_API_KEY || CONFIG.SHOKO_API_KEY || ''
+          } else if (key === 'hwaccel_mode') {
+            value = process.env.HW_ACCEL || 'auto'
+          } else if (key === 'flaresolverr_enabled') {
+            value = process.env.FLARESOLVERR_ENABLED || 'false'
+          } else if (key === 'flaresolverr_url') {
+            value = process.env.FLARESOLVERR_URL || 'http://localhost'
+          } else if (key === 'flaresolverr_port') {
+            value = process.env.FLARESOLVERR_PORT || '8191'
+          } else if (key === 'serverTheme') {
+            value = 'dango'
+          }
+        }
+        res.json({ value })
+        return
+      }
+
+      const row = await SettingsRepository.getByKey(req.db, key)
+      res.json({ value: row ? row.value : null })
     } catch {
       res.status(500).json({ error: 'DB error' })
     }
@@ -161,17 +187,22 @@ export class SettingsController {
     try {
       const key = String(req.body.key)
       const value = String(req.body.value ?? '')
+
+      if (GLOBAL_SETTING_KEYS.has(key)) {
+        if (req.user?.role !== 'admin') {
+          res.status(403).json({ error: 'ADMIN_REQUIRED' })
+          return
+        }
+        setGlobalSetting(key, value)
+        res.json({ success: true })
+        return
+      }
+
       const shouldDelete = value === '' && key === 'tracker_anilist_client_id'
       await performWriteTransaction(req.db, (tx) => {
         if (shouldDelete) SettingsRepository.deleteByKey(tx, key)
         else SettingsRepository.upsert(tx, key, value)
       })
-      if (req.body.key === 'discordRPCEnabled') {
-        discordRPCService.setEnabled(req.body.value === 'true' || req.body.value === true)
-      }
-      if (req.body.key === 'discordRPCHideMature') {
-        discordRPCService.setHideMature(req.body.value === 'true' || req.body.value === true)
-      }
       res.json({ success: true })
     } catch {
       res.status(500).json({ error: 'DB error' })
@@ -660,9 +691,10 @@ export class SettingsController {
     }
   }
 
-  getOfflineDbInfo = (req: Request, res: Response) => {
+  getOfflineDbInfo = (_req: Request, res: Response) => {
     try {
-      const info = animeIdMapper.getOfflineDbInfo(req.db)
+      const db = getSystemDb()
+      const info = animeIdMapper.getOfflineDbInfo(db)
       res.json(info)
     } catch (err) {
       logger.error({ err }, 'Failed to get offline DB info')
@@ -670,12 +702,13 @@ export class SettingsController {
     }
   }
 
-  updateOfflineDb = async (req: Request, res: Response) => {
+  updateOfflineDb = async (_req: Request, res: Response) => {
     try {
       if (animeIdMapper.getMappingCount().isRefreshing) {
         return res.status(409).json({ error: 'Offline database update already in progress' })
       }
-      animeIdMapper.refreshDatabase(req.db).catch((err) => {
+      const db = getSystemDb()
+      animeIdMapper.refreshDatabase(db).catch((err) => {
         logger.error({ err }, 'Manual offline database refresh failed')
       })
       res.json({ message: 'Offline database refresh started' })
@@ -688,7 +721,10 @@ export class SettingsController {
   setAutoUpdateOfflineDb = (req: Request, res: Response) => {
     try {
       const { enabled } = req.body
-      SettingsRepository.upsert(req.db, 'offlineDbAutoUpdateEnabled', enabled ? 'true' : 'false')
+      const db = getSystemDb()
+      const valStr = enabled ? 'true' : 'false'
+      SettingsRepository.upsert(db, 'offlineDbAutoUpdateEnabled', valStr)
+      setGlobalSetting('offlineDbAutoUpdateEnabled', valStr)
       res.json({ success: true, enabled: !!enabled })
     } catch (err) {
       logger.error({ err }, 'Failed to update auto-update setting')

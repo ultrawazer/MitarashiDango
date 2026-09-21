@@ -207,10 +207,6 @@ const Tv: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<HlsJsInstance | null>(null)
   const { hasConsent: hasMatureConsent, grant: grantMatureConsent } = useMatureConsent()
-  const discordSessionRef = useRef<string>('')
-  if (!discordSessionRef.current) {
-    discordSessionRef.current = `tv-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  }
 
   const isMovie =
     details?.seasons === undefined && details?.number_of_seasons === undefined
@@ -738,89 +734,6 @@ const Tv: React.FC = () => {
     })
   }
 
-  const sendTvPresence = useCallback(() => {
-    if (!details) return
-    const video = videoRef.current
-    const episodeLabel = isMovie
-      ? ''
-      : `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`
-    fetch('/api/discord/tv', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: details.title,
-        episodeLabel,
-        isPlaying: video ? !video.paused && !video.ended : true,
-        thumbnail: details.poster,
-        currentTime: video ? video.currentTime : 0,
-        duration: video ? video.duration || 0 : 0,
-        isAdult: details.adult === true,
-        sessionId: discordSessionRef.current,
-      }),
-    }).catch(() => {})
-    fetch('/api/discord/heartbeat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: discordSessionRef.current }),
-    }).catch(() => {})
-  }, [details, isMovie, season, episode])
-
-  useEffect(() => {
-    if (!details) return
-    sendTvPresence()
-    const id = window.setInterval(() => {
-      const video = videoRef.current
-      if (!video || !video.paused) sendTvPresence()
-    }, 15000)
-    return () => window.clearInterval(id)
-  }, [sendTvPresence, details])
-
-  useEffect(() => {
-    if (!details || isEmbedProvider || streamLoading || streamError || streams.length === 0) return
-    const video = videoRef.current
-    if (!video) return
-    const send = () => sendTvPresence()
-    video.addEventListener('play', send)
-    video.addEventListener('pause', send)
-    video.addEventListener('seeked', send)
-    return () => {
-      video.removeEventListener('play', send)
-      video.removeEventListener('pause', send)
-      video.removeEventListener('seeked', send)
-    }
-  }, [details, isEmbedProvider, streamLoading, streamError, streams, sendTvPresence])
-
-  useEffect(() => {
-    const sid = discordSessionRef.current
-    const clearTvPresence = () => {
-      const payload = JSON.stringify({ sessionId: sid })
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          '/api/discord/clear',
-          new Blob([payload], { type: 'application/json' })
-        )
-        navigator.sendBeacon(
-          '/api/discord/heartbeat',
-          new Blob([JSON.stringify({ sessionId: sid, bye: true })], { type: 'application/json' })
-        )
-      } else {
-        fetch('/api/discord/clear', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload,
-          keepalive: true,
-        }).catch(() => {})
-      }
-    }
-    const handlePageHide = () => clearTvPresence()
-    window.addEventListener('pagehide', handlePageHide)
-    window.addEventListener('beforeunload', handlePageHide)
-    return () => {
-      window.removeEventListener('pagehide', handlePageHide)
-      window.removeEventListener('beforeunload', handlePageHide)
-      clearTvPresence()
-    }
-  }, [])
 
   const filteredStreams =
     sourceTypeFilter === 'all' ? streams : streams.filter((s) => s.type === sourceTypeFilter)

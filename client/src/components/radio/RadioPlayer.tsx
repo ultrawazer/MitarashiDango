@@ -56,13 +56,6 @@ const RadioPlayer: React.FC<RadioPlayerProps> = ({
     const saved = parseFloat(localStorage.getItem('radioVolume') || '')
     return Number.isFinite(saved) ? saved : 1
   })
-  const sessionIdRef = useRef<string>('')
-  if (!sessionIdRef.current) {
-    sessionIdRef.current =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `radio-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  }
 
   const song = nowPlaying.song
   const cover = songArt(song) || station.favicon || null
@@ -104,90 +97,6 @@ const RadioPlayer: React.FC<RadioPlayerProps> = ({
     setShowControls(true)
   }, [expanded])
 
-  const elapsedSeconds = (startTime: string | null): number => {
-    if (!startTime) return 0
-    return Math.max(0, Math.floor((Date.now() - new Date(startTime).getTime()) / 1000))
-  }
-
-  const sendRadioPresence = React.useCallback(
-    (playing: boolean) => {
-      if (!station) return
-      fetch('/api/discord/radio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: headline,
-          stationLabel: station.name,
-          isPlaying: playing,
-          thumbnail: effectiveCover || '',
-          currentTime: elapsedSeconds(nowPlaying.startTime),
-          sessionId: sessionIdRef.current,
-        }),
-      }).catch(() => {})
-      fetch('/api/discord/heartbeat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sessionIdRef.current }),
-      }).catch(() => {})
-    },
-    [station, headline, effectiveCover, nowPlaying.startTime]
-  )
-
-  useEffect(() => {
-    sendRadioPresence(isPlaying)
-  }, [sendRadioPresence, isPlaying, station.id, headline, expanded])
-
-  useEffect(() => {
-    if (!isPlaying) return
-    const id = window.setInterval(() => sendRadioPresence(true), 15000)
-    return () => window.clearInterval(id)
-  }, [isPlaying, sendRadioPresence])
-
-  useEffect(() => {
-    const sid = sessionIdRef.current
-    const clearPresence = () => {
-      if (!sid) return
-      const payload = JSON.stringify({ sessionId: sid })
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          '/api/discord/clear',
-          new Blob([payload], { type: 'application/json' })
-        )
-        navigator.sendBeacon(
-          '/api/discord/heartbeat',
-          new Blob([JSON.stringify({ sessionId: sid, bye: true })], { type: 'application/json' })
-        )
-      } else {
-        fetch('/api/discord/clear', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload,
-          keepalive: true,
-        }).catch(() => {})
-        fetch('/api/discord/heartbeat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: sid, bye: true }),
-          keepalive: true,
-        }).catch(() => {})
-      }
-    }
-
-    const handlePageHide = () => clearPresence()
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') clearPresence()
-    }
-    window.addEventListener('pagehide', handlePageHide)
-    window.addEventListener('beforeunload', handlePageHide)
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    return () => {
-      window.removeEventListener('pagehide', handlePageHide)
-      window.removeEventListener('beforeunload', handlePageHide)
-      document.removeEventListener('visibilitychange', handleVisibility)
-      clearPresence()
-    }
-  }, [])
 
   useEffect(() => {
     if (!nowPlaying.startTime) {

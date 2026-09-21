@@ -93,6 +93,13 @@ export class AnimeIdMapper {
   public backfillShowsMetaGenres(db: DatabaseWrapper): number {
     try {
       this.ensureTable(db)
+      const tableExists = db.get<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='shows_meta'"
+      )
+      if (!tableExists) {
+        return 0
+      }
+
       db.run(`
         UPDATE shows_meta
         SET genres = (
@@ -245,59 +252,79 @@ export class AnimeIdMapper {
   }
 
   public getOfflineDbInfo(db: DatabaseWrapper): OfflineDbInfo {
-    const autoUpdateSetting = SettingsRepository.getByKey(db, 'offlineDbAutoUpdateEnabled')
-    const lastChecked = SettingsRepository.getByKey(db, 'offlineDbLastCheckedAt')
-    const lastUpdated = SettingsRepository.getByKey(db, 'offlineDbLastUpdatedAt')
-    const lastStatus = SettingsRepository.getByKey(db, 'offlineDbLastStatus')
-    const lastMessage = SettingsRepository.getByKey(db, 'offlineDbLastMessage')
+    try {
+      const autoUpdateSetting = SettingsRepository.getByKey(db, 'offlineDbAutoUpdateEnabled')
+      const lastChecked = SettingsRepository.getByKey(db, 'offlineDbLastCheckedAt')
+      const lastUpdated = SettingsRepository.getByKey(db, 'offlineDbLastUpdatedAt')
+      const lastStatus = SettingsRepository.getByKey(db, 'offlineDbLastStatus')
+      const lastMessage = SettingsRepository.getByKey(db, 'offlineDbLastMessage')
 
-    return {
-      totalMapped: this.anidbToAnilist.size,
-      totalMalMapped: this.malToEntry.size,
-      isInitialized: this.isInitialized,
-      isRefreshing: this.isRefreshing,
-      autoUpdateEnabled: autoUpdateSetting ? autoUpdateSetting.value !== 'false' : true,
-      lastCheckedAt: lastChecked?.value ?? null,
-      lastUpdatedAt: lastUpdated?.value ?? null,
-      lastStatus: (lastStatus?.value as OfflineDbInfo['lastStatus']) || (this.isRefreshing ? 'updating' : 'idle'),
-      lastMessage: lastMessage?.value ?? null,
+      return {
+        totalMapped: this.anidbToAnilist.size,
+        totalMalMapped: this.malToEntry.size,
+        isInitialized: this.isInitialized,
+        isRefreshing: this.isRefreshing,
+        autoUpdateEnabled: autoUpdateSetting ? autoUpdateSetting.value !== 'false' : true,
+        lastCheckedAt: lastChecked?.value ?? null,
+        lastUpdatedAt: lastUpdated?.value ?? null,
+        lastStatus: (lastStatus?.value as OfflineDbInfo['lastStatus']) || (this.isRefreshing ? 'updating' : 'idle'),
+        lastMessage: lastMessage?.value ?? null,
+      }
+    } catch (err) {
+      log.warn({ err }, 'Failed to get offline db info from settings')
+      return {
+        totalMapped: this.anidbToAnilist.size,
+        totalMalMapped: this.malToEntry.size,
+        isInitialized: this.isInitialized,
+        isRefreshing: this.isRefreshing,
+        autoUpdateEnabled: true,
+        lastCheckedAt: null,
+        lastUpdatedAt: null,
+        lastStatus: this.isRefreshing ? 'updating' : 'idle',
+        lastMessage: null,
+      }
     }
   }
 
   public checkWeeklyUpdateDue(db: DatabaseWrapper): boolean {
-    const autoUpdateSetting = SettingsRepository.getByKey(db, 'offlineDbAutoUpdateEnabled')
-    const isEnabled = autoUpdateSetting ? autoUpdateSetting.value !== 'false' : true
-    if (!isEnabled) {
+    try {
+      const autoUpdateSetting = SettingsRepository.getByKey(db, 'offlineDbAutoUpdateEnabled')
+      const isEnabled = autoUpdateSetting ? autoUpdateSetting.value !== 'false' : true
+      if (!isEnabled) {
+        return false
+      }
+
+      // Determine the most recent Saturday 00:00:00 UTC
+      const now = new Date()
+      const day = now.getUTCDay() // 0 is Sunday, 6 is Saturday
+      const daysSinceSaturday = (day + 1) % 7
+      const latestSaturday = new Date(
+        Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate() - daysSinceSaturday,
+          0,
+          0,
+          0,
+          0
+        )
+      )
+
+      const lastCheckedRecord = SettingsRepository.getByKey(db, 'offlineDbLastCheckedAt')
+      if (!lastCheckedRecord?.value) {
+        return true
+      }
+
+      const lastCheckedTime = new Date(lastCheckedRecord.value).getTime()
+      if (isNaN(lastCheckedTime)) {
+        return true
+      }
+
+      return lastCheckedTime < latestSaturday.getTime()
+    } catch (err) {
+      log.warn({ err }, 'Failed to check if weekly update is due from settings')
       return false
     }
-
-    // Determine the most recent Saturday 00:00:00 UTC
-    const now = new Date()
-    const day = now.getUTCDay() // 0 is Sunday, 6 is Saturday
-    const daysSinceSaturday = (day + 1) % 7
-    const latestSaturday = new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate() - daysSinceSaturday,
-        0,
-        0,
-        0,
-        0
-      )
-    )
-
-    const lastCheckedRecord = SettingsRepository.getByKey(db, 'offlineDbLastCheckedAt')
-    if (!lastCheckedRecord?.value) {
-      return true
-    }
-
-    const lastCheckedTime = new Date(lastCheckedRecord.value).getTime()
-    if (isNaN(lastCheckedTime)) {
-      return true
-    }
-
-    return lastCheckedTime < latestSaturday.getTime()
   }
 
   public async executeScheduledUpdate(db: DatabaseWrapper): Promise<void> {

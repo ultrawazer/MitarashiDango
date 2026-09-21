@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { FaBars, FaCloud, FaGithub, FaSearch } from 'react-icons/fa'
 import NotificationBell from './NotificationBell'
 import Logo from '../common/Logo'
+import UserMenu from './UserMenu'
+import { useAuth } from '../../contexts/AuthContext'
 import { useSidebar } from '../../hooks/useSidebar'
 import { hideVirtualKeyboard } from '../../hooks/useVirtualKeyboard'
 import styles from './Header.module.css'
@@ -56,6 +58,7 @@ const fetchSyncProfile = async (): Promise<UserProfile | null> => {
 
 const Header: React.FC = () => {
   const { toggleSidebar } = useSidebar()
+  const { isAdmin } = useAuth()
   const [query, setQuery] = useState('')
   const [visible, setVisible] = useState(true)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
@@ -180,12 +183,14 @@ const Header: React.FC = () => {
               >
                 Insights
               </Link>
-              <Link
-                to="/settings"
-                className={`${styles.navLink} ${location.pathname.startsWith('/settings') ? styles.navLinkActive : ''}`}
-              >
-                Settings
-              </Link>
+              {isAdmin && (
+                <Link
+                  to="/settings"
+                  className={`${styles.navLink} ${location.pathname.startsWith('/settings') ? styles.navLinkActive : ''}`}
+                >
+                  Settings
+                </Link>
+              )}
             </nav>
           </div>
 
@@ -220,20 +225,24 @@ const Header: React.FC = () => {
 
             <NotificationBell />
 
-            <Link to="/settings?tab=sync" className={styles.profileBtn} aria-label="Sync settings">
-              {user?.picture ? (
-                <img
-                  src={user.picture}
-                  alt={user.name}
-                  className={styles.profileImg}
-                  referrerPolicy="no-referrer"
-                />
-              ) : user?.provider === 'github' ? (
-                <FaGithub />
-              ) : (
-                <FaCloud />
-              )}
-            </Link>
+            {user && (
+              <Link to="/settings?tab=sync" className={styles.profileBtn} aria-label="Sync settings">
+                {user.picture ? (
+                  <img
+                    src={user.picture}
+                    alt={user.name}
+                    className={styles.profileImg}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : user.provider === 'github' ? (
+                  <FaGithub />
+                ) : (
+                  <FaCloud />
+                )}
+              </Link>
+            )}
+
+            <UserMenu />
           </div>
         </div>
       </header>

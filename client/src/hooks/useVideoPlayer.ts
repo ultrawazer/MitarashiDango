@@ -516,14 +516,6 @@ const useVideoPlayer = ({
     sessionIdRef.current = Math.random().toString(36).substring(2)
   }, [showId, episodeNumber])
 
-  useEffect(() => {
-    const sessionId = sessionIdRef.current
-    return () => {
-      const payload = JSON.stringify({ sessionId })
-      const blob = new Blob([payload], { type: 'application/json' })
-      navigator.sendBeacon('/api/discord/clear', blob)
-    }
-  }, [showId, episodeNumber])
 
   useEffect(() => {
     if (sourceType !== 'iframe') return

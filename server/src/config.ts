@@ -151,7 +151,6 @@ export const CONFIG = {
   GOOGLE_AUTH_WORKER_URL: process.env.GOOGLE_AUTH_WORKER_URL || '',
   RCLONE_REMOTE: process.env.RCLONE_REMOTE,
   SYNC_PROVIDER: process.env.SYNC_PROVIDER as 'github' | 'google' | 'rclone' | 'none' | undefined,
-  DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID,
   SHOKO_URL: process.env.SHOKO_URL || 'http://localhost',
   SHOKO_PORT: parseInt(process.env.SHOKO_PORT || '8111', 10),
   SHOKO_API_KEY: process.env.SHOKO_API_KEY || '',

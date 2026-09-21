@@ -8,7 +8,7 @@ import { CONFIG } from '../config'
 import { rcloneService } from '../rclone'
 import path from 'path'
 
-export class AuthController {
+export class SyncAuthController {
   private runSyncSequence: (
     db: DatabaseWrapper,
     provider?: 'github' | 'google' | 'rclone' | 'none'

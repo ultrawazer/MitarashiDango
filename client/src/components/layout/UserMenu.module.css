@@ -1,0 +1,228 @@
+.container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.avatarButton {
+  background: rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.15rem;
+  padding: 0;
+  margin: 0;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  transition:
+    transform 0.15s,
+    background 0.15s;
+  flex-shrink: 0;
+}
+
+.avatarButton:hover {
+  background: rgba(0, 0, 0, 0.25);
+  transform: scale(1.05);
+}
+
+.avatarButton:active {
+  transform: scale(0.95);
+}
+
+.userIcon {
+  font-size: 1.15rem;
+  color: #fff;
+  transition: color 0.2s;
+}
+
+.avatarButton:hover .userIcon {
+  color: var(--accent);
+}
+
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+@media (max-width: 848px) {
+  .avatarButton {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.avatarPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent) 0%, rgba(139, 92, 246, 0.7) 100%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 240px;
+  background: rgba(23, 23, 26, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: 0.6rem 0;
+  z-index: 1000;
+  animation: dropDownIn 0.18s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes dropDownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.userHeader {
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.headerAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--bg-elevated);
+}
+
+.headerAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.headerUserInfo {
+  min-width: 0;
+  flex: 1;
+}
+
+.headerDisplayName {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.headerUsername {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0.15rem 0 0;
+}
+
+.roleBadge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  margin-top: 0.35rem;
+}
+
+.roleAdmin {
+  background: rgba(206, 138, 75, 0.2);
+  color: var(--accent);
+  border: 1px solid rgba(206, 138, 75, 0.4);
+}
+
+.roleUser {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0.4rem 0;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.menuItem:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.menuItemIcon {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  width: 18px;
+  display: flex;
+  justify-content: center;
+}
+
+.menuItem:hover .menuItemIcon {
+  color: var(--accent);
+}
+
+.logoutBtn {
+  color: #fca5a5;
+}
+
+.logoutBtn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.logoutBtn .menuItemIcon {
+  color: #f87171;
+}
+
+.logoutBtn:hover .menuItemIcon {
+  color: #ef4444;
+}

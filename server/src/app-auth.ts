@@ -1,63 +1,29 @@
 import crypto from 'crypto'
-import fs from 'fs'
-import path from 'path'
-import type { Request, Response, NextFunction } from 'express'
-import { CONFIG } from './config'
+import type { Request } from 'express'
+import {
+  createSession as dbCreateSession,
+  getSession as dbGetSession,
+  deleteSession as dbDeleteSession,
+  deleteSessionsForUser as dbDeleteSessionsForUser,
+  pruneExpiredSessions,
+  type SystemSession,
+} from './system-db'
 
-export const LAN_AUTH_COOKIE = 'dango_lan_auth'
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
+export const SESSION_COOKIE_NAME = 'dango_session'
+export const LEGACY_COOKIE_NAME = 'dango_lan_auth'
+export const SESSION_TTL_REMEMBER_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+export const SESSION_TTL_STANDARD_MS = 24 * 60 * 60 * 1000 // 24 hours
+export const SESSION_TTL_MS = SESSION_TTL_REMEMBER_MS
 
-function sessionsFile() {
-  return path.join(CONFIG.ROOT, 'lan_sessions.json')
-}
-
-function loadSessions(): Record<string, number> {
-  try {
-    if (!fs.existsSync(sessionsFile())) return {}
-    const raw = fs.readFileSync(sessionsFile(), 'utf8')
-    const parsed = JSON.parse(raw) as Record<string, number>
-    const now = Date.now()
-    let dirty = false
-    for (const [token, expiry] of Object.entries(parsed)) {
-      if (typeof expiry !== 'number' || expiry < now) {
-        delete parsed[token]
-        dirty = true
-      }
-    }
-    if (dirty) saveSessions(parsed)
-    return parsed
-  } catch {
-    return {}
-  }
-}
-
-function saveSessions(sessions: Record<string, number>) {
-  try {
-    fs.mkdirSync(CONFIG.ROOT, { recursive: true })
-    fs.writeFileSync(sessionsFile(), JSON.stringify(sessions))
-  } catch {
-    // sessions won't be saved if disk write fails
-  }
-}
-
-export function getAppPasswordHash(): string {
-  return process.env.APP_PASSWORD_HASH || CONFIG.APP_PASSWORD_HASH || ''
-}
-
-export function hasAppPassword(): boolean {
-  return !!getAppPasswordHash()
-}
-
-export function hashAppPassword(password: string): string {
+export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
   const hash = crypto.scryptSync(password, salt, 32).toString('hex')
   return `scrypt:${salt}:${hash}`
 }
 
-export function verifyAppPassword(password: string): boolean {
-  const stored = getAppPasswordHash()
-  if (!stored) return false
-  const parts = stored.split(':')
+export function verifyPassword(password: string, storedHash: string): boolean {
+  if (!storedHash) return false
+  const parts = storedHash.split(':')
   if (parts.length !== 3 || parts[0] !== 'scrypt') return false
   const [, salt, expectedHex] = parts
   try {
@@ -70,62 +36,45 @@ export function verifyAppPassword(password: string): boolean {
   }
 }
 
-export async function setAppPassword(password: string): Promise<void> {
-  const { updateEnvFile } = await import('./utils/env.utils')
-  if (!password) {
-    await updateEnvFile({ APP_PASSWORD_HASH: '' })
-    ;(CONFIG as { APP_PASSWORD_HASH: string }).APP_PASSWORD_HASH = ''
-    return
-  }
-  const hash = hashAppPassword(password)
-  await updateEnvFile({ APP_PASSWORD_HASH: hash })
-  ;(CONFIG as { APP_PASSWORD_HASH: string }).APP_PASSWORD_HASH = hash
-}
-
-export function createLanSession(): { token: string; expiry: number } {
+export function createNewSession(
+  userId: string,
+  userAgent?: string,
+  ipAddress?: string,
+  rememberMe: boolean = false
+): { token: string; expiresAt: string } {
   const token = crypto.randomBytes(32).toString('hex')
-  const expiry = Date.now() + SESSION_TTL_MS
-  const sessions = loadSessions()
-  sessions[token] = expiry
-  saveSessions(sessions)
-  return { token, expiry }
+  const ttl = rememberMe ? SESSION_TTL_REMEMBER_MS : SESSION_TTL_STANDARD_MS
+  const expiresAt = new Date(Date.now() + ttl).toISOString()
+
+  dbCreateSession({
+    token,
+    userId,
+    createdAt: new Date().toISOString(),
+    expiresAt,
+    userAgent: userAgent ?? null,
+    ipAddress: ipAddress ?? null,
+  })
+
+  return { token, expiresAt }
 }
 
-export function validateLanSession(token: string | undefined | null): boolean {
-  if (!token) return false
-  const sessions = loadSessions()
-  const expiry = sessions[token]
-  if (!expiry) return false
-  if (expiry < Date.now()) {
-    delete sessions[token]
-    saveSessions(sessions)
-    return false
-  }
-  return true
+export function getSessionFromToken(token: string) {
+  if (!token) return null
+  return dbGetSession(token)
 }
 
-export function revokeLanSession(token: string | undefined | null) {
+export function revokeSession(token: string): void {
   if (!token) return
-  const sessions = loadSessions()
-  if (sessions[token]) {
-    delete sessions[token]
-    saveSessions(sessions)
-  }
+  dbDeleteSession(token)
 }
 
-export function clearAllLanSessions() {
-  saveSessions({})
+export function revokeAllUserSessions(userId: string): void {
+  if (!userId) return
+  dbDeleteSessionsForUser(userId)
 }
 
-function normalizeIp(ip: string | undefined): string {
-  if (!ip) return ''
-  if (ip.startsWith('::ffff:')) return ip.slice('::ffff:'.length)
-  return ip
-}
-
-export function isLoopbackRequest(req: Request): boolean {
-  const candidates = [req.ip, req.socket?.remoteAddress].map((v) => normalizeIp(v as string))
-  return candidates.includes('127.0.0.1') || candidates.includes('::1')
+export function cleanExpiredSessions(): void {
+  pruneExpiredSessions()
 }
 
 export function getRequestToken(req: Request): string | null {
@@ -133,6 +82,7 @@ export function getRequestToken(req: Request): string | null {
   if (auth && auth.toLowerCase().startsWith('bearer ')) {
     return auth.slice(7).trim() || null
   }
+
   const cookieHeader = req.headers.cookie
   if (cookieHeader) {
     const parts = cookieHeader.split(';')
@@ -140,40 +90,24 @@ export function getRequestToken(req: Request): string | null {
       const idx = part.indexOf('=')
       if (idx === -1) continue
       const name = part.slice(0, idx).trim()
-      if (name === LAN_AUTH_COOKIE) {
-        return decodeURIComponent(part.slice(idx + 1).trim()) || null
+      if (name === SESSION_COOKIE_NAME || name === LEGACY_COOKIE_NAME) {
+        const val = decodeURIComponent(part.slice(idx + 1).trim())
+        if (val) return val
       }
     }
   }
+
   return null
 }
 
-export function isLanAuthenticated(req: Request): boolean {
-  if (!hasAppPassword()) return true
-  return validateLanSession(getRequestToken(req))
+export function buildSessionCookie(token: string, expiresAt: string): string {
+  const maxAge = Math.max(
+    1,
+    Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)
+  )
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax`
 }
 
-const PUBLIC_PATHS = new Set([
-  '/api/auth/app-status',
-  '/api/auth/app-login',
-  '/api/auth/app-logout',
-  '/api/internal/shutdown',
-])
-
-export function lanAuthMiddleware(req: Request, res: Response, next: NextFunction) {
-  if (!req.path.startsWith('/api/')) return next()
-  if (PUBLIC_PATHS.has(req.path)) return next()
-  if (req.path.startsWith('/api/internal/') && isLoopbackRequest(req)) return next()
-  if (!hasAppPassword()) return next()
-  if (validateLanSession(getRequestToken(req))) return next()
-  return res.status(401).json({ error: 'LAN_AUTH_REQUIRED' })
-}
-
-export function buildLanCookie(token: string, expiry: number): string {
-  const maxAge = Math.max(1, Math.floor((expiry - Date.now()) / 1000))
-  return `${LAN_AUTH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax`
-}
-
-export function clearLanCookie(): string {
-  return `${LAN_AUTH_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`
+export function clearSessionCookie(): string {
+  return `${SESSION_COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`
 }

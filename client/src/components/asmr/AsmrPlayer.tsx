@@ -70,13 +70,6 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
   const [loadedImages, setLoadedImages] = useState<ReadonlySet<string>>(new Set())
   const [showChapterPanel, setShowChapterPanel] = useState(false)
   const [showControls, setShowControls] = useState(true)
-  const sessionIdRef = useRef<string>('')
-  if (!sessionIdRef.current) {
-    sessionIdRef.current =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `asmr-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  }
   const [volume, setVolume] = useState(() => {
     const saved = parseFloat(localStorage.getItem('asmrVolume') || '')
     return Number.isFinite(saved) ? saved : 1
@@ -223,95 +216,6 @@ const AsmrPlayer: React.FC<AsmrPlayerProps> = ({
     if (showChapterPanel) setShowControls(true)
   }, [showChapterPanel])
 
-  const sendAsmrPresence = useCallback(
-    (playing: boolean) => {
-      if (!title || tracks.length === 0) return
-      const t = tracks[trackIndex]
-      const trackLabel = t ? `${t.resolutionStr} (${trackIndex + 1}/${tracks.length})` : ''
-      const audio = audioRef.current
-      const cur = audio ? audio.currentTime : 0
-      const dur = audio ? audio.duration || 0 : 0
-      const poster = sanitizedImages[0] || ''
-      fetch('/api/discord/asmr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          trackLabel,
-          isPlaying: playing,
-          thumbnail: poster,
-          thumbnails: sanitizedImages,
-          currentTime: cur,
-          duration: dur,
-          isAdult: !!isAdult,
-          rjCode: rjCode || '',
-          sessionId: sessionIdRef.current,
-        }),
-      }).catch(() => {})
-      fetch('/api/discord/heartbeat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sessionIdRef.current }),
-      }).catch(() => {})
-    },
-    [title, tracks, trackIndex, sanitizedImages, isAdult, rjCode]
-  )
-
-  useEffect(() => {
-    sendAsmrPresence(isPlaying)
-  }, [sendAsmrPresence, isPlaying, trackIndex, title, expanded])
-
-  useEffect(() => {
-    if (!isPlaying) return
-    const id = window.setInterval(() => sendAsmrPresence(true), 15000)
-    return () => window.clearInterval(id)
-  }, [isPlaying, sendAsmrPresence])
-
-  useEffect(() => {
-    const sid = sessionIdRef.current
-    const clearAsmrPresence = () => {
-      if (!sid) return
-      const payload = JSON.stringify({ sessionId: sid })
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          '/api/discord/clear',
-          new Blob([payload], { type: 'application/json' })
-        )
-        navigator.sendBeacon(
-          '/api/discord/heartbeat',
-          new Blob([JSON.stringify({ sessionId: sid, bye: true })], { type: 'application/json' })
-        )
-      } else {
-        fetch('/api/discord/clear', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload,
-          keepalive: true,
-        }).catch(() => {})
-        fetch('/api/discord/heartbeat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: sid, bye: true }),
-          keepalive: true,
-        }).catch(() => {})
-      }
-    }
-
-    const handlePageHide = () => clearAsmrPresence()
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') clearAsmrPresence()
-    }
-    window.addEventListener('pagehide', handlePageHide)
-    window.addEventListener('beforeunload', handlePageHide)
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    return () => {
-      window.removeEventListener('pagehide', handlePageHide)
-      window.removeEventListener('beforeunload', handlePageHide)
-      document.removeEventListener('visibilitychange', handleVisibility)
-      clearAsmrPresence()
-    }
-  }, [])
 
   const handleImgLoad = useCallback((src: string) => {
     setLoadedImages((prev) => {

@@ -5,18 +5,17 @@ import TitlePreferenceToggle from '../components/common/TitlePreferenceToggle'
 import styles from './Settings.module.css'
 import GitHubSyncSettings from '../components/settings/GitHubSyncSettings'
 import GoogleAuthSettings from '../components/settings/GoogleAuthSettings'
-import WatchlistSettings from '../components/settings/WatchlistSettings'
 import RcloneSettings from '../components/settings/RcloneSettings'
 import SyncProviderSelector from '../components/settings/SyncProviderSelector'
-import DiscordTokenBookmarklet from '../components/settings/DiscordTokenBookmarklet'
-import LanAuthSettings from '../components/settings/LanAuthSettings'
-import { FaCog, FaCloud, FaDatabase, FaList, FaServer, FaChartPie, FaPuzzlePiece, FaPalette } from 'react-icons/fa'
+import { FaCog, FaCloud, FaDatabase, FaServer, FaPuzzlePiece, FaPalette, FaUsers } from 'react-icons/fa'
 import LocalMediaSettings from '../components/settings/LocalMediaSettings'
 import OfflineDbSettings from '../components/settings/OfflineDbSettings'
 import ExtensionsSettings from '../components/settings/ExtensionsSettings'
 import FlareSolverrSettings from '../components/settings/FlareSolverrSettings'
 import ThemeSettings from '../components/settings/ThemeSettings'
+import AdminUserManagement from '../components/settings/AdminUserManagement'
 import { useLowEndMode } from '../contexts/LowEndModeContext'
+import { useAuth } from '../contexts/AuthContext'
 import ToggleSwitch from '../components/common/ToggleSwitch'
 import packageJson from '../../../package.json'
 import { deleteTelemetryData } from '../hooks/useTelemetry'
@@ -25,20 +24,19 @@ import {
   VIRTUAL_KEYBOARD_ENABLED_CHANGE_EVENT,
   VIRTUAL_KEYBOARD_ENABLED_KEY,
 } from '../hooks/useVirtualKeyboard'
-import { useSetting, useUpdateSetting } from '../hooks/useSettings'
 import { useSystemNotifications } from '../hooks/useAnimeData'
-import { Alert } from '../components/common/Alert'
 
-type SettingsTab = 'general' | 'themes' | 'sync' | 'watchlist' | 'insights' | 'database' | 'local-media' | 'extensions'
+type SettingsTab = 'general' | 'users' | 'themes' | 'local-media' | 'extensions' | 'sync' | 'database'
+
+const VALID_TABS: SettingsTab[] = ['general', 'users', 'themes', 'local-media', 'extensions', 'sync', 'database']
 
 const Settings: React.FC = () => {
+  const { isAdmin, isLoading: isAuthLoading } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const initialTab = searchParams.get('tab') as SettingsTab | null
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    initialTab && ['general', 'themes', 'sync', 'watchlist', 'insights', 'database', 'local-media', 'extensions'].includes(initialTab)
-      ? initialTab
-      : 'general'
+    initialTab && VALID_TABS.includes(initialTab) ? initialTab : 'general'
   )
   const [statusMessage, setStatusMessage] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -51,6 +49,12 @@ const Settings: React.FC = () => {
   )
   const { data: systemNotifications = [] } = useSystemNotifications()
   const hasExtensionUpdates = systemNotifications.some((sn) => sn.id === 'system-extension-updates')
+
+  useEffect(() => {
+    if (!isAuthLoading && !isAdmin) {
+      navigate('/user-settings', { replace: true })
+    }
+  }, [isAdmin, isAuthLoading, navigate])
 
   useEffect(() => {
     fetch('/api/installation-id')
@@ -67,75 +71,6 @@ const Settings: React.FC = () => {
   }, [])
   const [virtualKeyboardEnabled, setVirtualKeyboardEnabled] = useState(getVirtualKeyboardEnabled)
 
-  const [discordEnabled, setDiscordEnabled] = useState(true)
-  const { data: discordSetting } = useSetting('discordRPCEnabled')
-  const updateSetting = useUpdateSetting()
-
-  const [discordHideMature, setDiscordHideMature] = useState(true)
-  const { data: discordHideMatureSetting } = useSetting('discordRPCHideMature')
-
-  const [insightsIncludeWatchlist, setInsightsIncludeWatchlist] = useState(false)
-  const { data: insightsIncludeWatchlistSetting } = useSetting('insights_include_watchlist')
-
-  const [discordGatewayToken, setDiscordGatewayToken] = useState('')
-  const [discordGatewayStatus, setDiscordGatewayStatus] = useState<{
-    hasToken: boolean
-    masked: string | null
-    enabled: boolean
-  } | null>(null)
-
-  useEffect(() => {
-    fetch('/api/discord/gateway/status')
-      .then((res) => res.json())
-      .then((data) => {
-        setDiscordGatewayStatus(data)
-        if (data.masked && data.masked !== 'none') {
-          setDiscordGatewayToken(data.masked)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (discordSetting !== undefined) {
-      setDiscordEnabled(
-        discordSetting === 'true' || discordSetting === true || discordSetting === null
-      )
-    }
-  }, [discordSetting])
-
-  useEffect(() => {
-    if (discordHideMatureSetting !== undefined) {
-      setDiscordHideMature(
-        discordHideMatureSetting === 'true' ||
-          discordHideMatureSetting === true ||
-          discordHideMatureSetting === null
-      )
-    }
-  }, [discordHideMatureSetting])
-
-  useEffect(() => {
-    if (insightsIncludeWatchlistSetting !== undefined) {
-      setInsightsIncludeWatchlist(
-        insightsIncludeWatchlistSetting === 'true' || insightsIncludeWatchlistSetting === true
-      )
-    }
-  }, [insightsIncludeWatchlistSetting])
-
-  const toggleInsightsIncludeWatchlist = (enabled: boolean) => {
-    setInsightsIncludeWatchlist(enabled)
-    updateSetting.mutate({ key: 'insights_include_watchlist', value: String(enabled) })
-  }
-
-  const toggleDiscord = (enabled: boolean) => {
-    setDiscordEnabled(enabled)
-    updateSetting.mutate({ key: 'discordRPCEnabled', value: String(enabled) })
-  }
-
-  const toggleDiscordHideMature = (enabled: boolean) => {
-    setDiscordHideMature(enabled)
-    updateSetting.mutate({ key: 'discordRPCHideMature', value: String(enabled) })
-  }
 
   const toggleTelemetry = (enabled: boolean) => {
     setTelemetryEnabled(enabled)
@@ -152,15 +87,12 @@ const Settings: React.FC = () => {
   }
 
   React.useEffect(() => {
-    document.title = 'Settings - dango'
+    document.title = 'Admin Settings - dango'
   }, [])
 
   React.useEffect(() => {
     const tab = searchParams.get('tab') as SettingsTab | null
-    if (
-      tab &&
-      ['general', 'themes', 'sync', 'watchlist', 'insights', 'database', 'local-media', 'extensions'].includes(tab)
-    ) {
+    if (tab && VALID_TABS.includes(tab)) {
       setActiveTab(tab)
     }
   }, [searchParams])
@@ -270,174 +202,6 @@ const Settings: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ marginTop: '2rem' }}>
-                <LanAuthSettings />
-              </div>
-
-              <div className={styles.settingItem} style={{ marginTop: '1.5rem' }}>
-                <div className={styles.settingRow}>
-                  <div style={{ minWidth: 0 }}>
-                    <h4 style={{ margin: 0, fontSize: '1rem' }}>Discord Rich Presence</h4>
-                    <p
-                      style={{
-                        margin: '0.25rem 0 0',
-                        fontSize: '0.85rem',
-                        color: 'var(--text-secondary)',
-                      }}
-                    >
-                      Show your current anime and watch progress on your Discord profile status.
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    isChecked={discordEnabled}
-                    onChange={(e) => toggleDiscord(e.target.checked)}
-                    id="discord-rpc-enabled"
-                  />
-                </div>
-              </div>
-
-              {discordEnabled && (
-                <div className={styles.settingItem} style={{ marginTop: '1rem' }}>
-                  <div className={styles.settingRow}>
-                    <div style={{ minWidth: 0 }}>
-                      <h4 style={{ margin: 0, fontSize: '1rem' }}>Hide Mature Content</h4>
-                      <p
-                        style={{
-                          margin: '0.25rem 0 0',
-                          fontSize: '0.85rem',
-                          color: 'var(--text-secondary)',
-                        }}
-                      >
-                        Hide mature content (18+) from Discord Rich Presence.
-                      </p>
-                    </div>
-                    <ToggleSwitch
-                      isChecked={discordHideMature}
-                      onChange={(e) => toggleDiscordHideMature(e.target.checked)}
-                      id="discord-hide-mature"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div
-                className={styles.settingItem}
-                style={{
-                  marginTop: '1.5rem',
-                  background: 'var(--bg-tertiary)',
-                  padding: '1rem',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                }}
-              >
-                <div className={styles.settingRow}>
-                  <div style={{ minWidth: 0 }}>
-                    <h4 style={{ margin: 0, fontSize: '1rem' }}>
-                      Discord Mobile Presence (Gateway)
-                    </h4>
-                    <p
-                      style={{
-                        margin: '0.25rem 0 0',
-                        fontSize: '0.85rem',
-                        color: 'var(--text-secondary)',
-                      }}
-                    >
-                      Paste your Discord authentication token to enable presence on mobile devices.
-                      If no token is saved, the default desktop Rich Presence is used. The token is
-                      stored locally in your configuration and never shared.
-                    </p>
-                  </div>
-                </div>
-
-                <Alert variant="warning" style={{ marginTop: '0.75rem' }}>
-                  <strong>Use at your own risk.</strong> This feature uses the Discord Gateway API
-                  with your user token, which violates Discord's Terms of Service. Discord may
-                  detect this usage and take action against your account, including phone number
-                  locks, temporary suspensions, or permanent bans. While the risk is generally low,
-                  it is not zero. Only use this if you understand and accept the risks.
-                </Alert>
-
-                <div
-                  style={{
-                    marginTop: '0.75rem',
-                    display: 'flex',
-                    gap: '0.5rem',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <input
-                    type="password"
-                    value={discordGatewayToken}
-                    onChange={(e) => setDiscordGatewayToken(e.target.value)}
-                    placeholder="Paste Discord token here..."
-                    style={{
-                      flex: '1 1 200px',
-                      padding: '0.5rem',
-                      borderRadius: '4px',
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontFamily: 'monospace',
-                      minWidth: 0,
-                    }}
-                  />
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={async () => {
-                      const res = await fetch('/api/discord/gateway/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token: discordGatewayToken }),
-                      })
-                      const data = await res.json()
-                      if (res.ok) {
-                        setDiscordGatewayStatus({
-                          hasToken: true,
-                          masked: data.masked,
-                          enabled: true,
-                        })
-                        setDiscordGatewayToken(data.masked)
-                      } else {
-                        alert(data.error || 'Failed to save token')
-                      }
-                    }}
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={async () => {
-                      await fetch('/api/discord/gateway/remove', { method: 'POST' })
-                      setDiscordGatewayToken('')
-                      setDiscordGatewayStatus({ hasToken: false, masked: null, enabled: false })
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-
-                {discordGatewayStatus && (
-                  <p
-                    style={{
-                      marginTop: '0.5rem',
-                      fontSize: '0.8rem',
-                      color: discordGatewayStatus.hasToken ? 'green' : 'var(--text-secondary)',
-                    }}
-                  >
-                    Status:{' '}
-                    {discordGatewayStatus.hasToken
-                      ? `Token saved (${discordGatewayStatus.masked})`
-                      : 'No token saved'}
-                    {discordGatewayStatus.enabled ? ' - Gateway active' : ''}
-                  </p>
-                )}
-
-                <DiscordTokenBookmarklet />
-              </div>
-
               <div className={styles.settingItem} style={{ marginTop: '1.5rem' }}>
                 <div className={styles.settingRow}>
                   <div style={{ minWidth: 0 }}>
@@ -537,10 +301,28 @@ const Settings: React.FC = () => {
             <FlareSolverrSettings />
           </div>
         )
+      case 'users':
+        return (
+          <div className={styles.tabContent}>
+            <AdminUserManagement />
+          </div>
+        )
       case 'themes':
         return (
           <div className={styles.tabContent}>
-            <ThemeSettings />
+            <ThemeSettings mode="server" />
+          </div>
+        )
+      case 'local-media':
+        return (
+          <div className={styles.tabContent}>
+            <LocalMediaSettings />
+          </div>
+        )
+      case 'extensions':
+        return (
+          <div className={styles.tabContent}>
+            <ExtensionsSettings />
           </div>
         )
       case 'sync':
@@ -550,43 +332,6 @@ const Settings: React.FC = () => {
             <GitHubSyncSettings />
             <GoogleAuthSettings />
             <RcloneSettings />
-          </div>
-        )
-      case 'watchlist':
-        return (
-          <div className={styles.tabContent}>
-            <WatchlistSettings />
-          </div>
-        )
-      case 'insights':
-        return (
-          <div className={styles.tabContent}>
-            <div className={styles.sectionCard}>
-              <h3>Watch Insights</h3>
-              <p>Configure how anime watch statistics, completion history, and metrics are calculated.</p>
-              <div className={styles.settingItem} style={{ marginTop: '1.25rem' }}>
-                <div className={styles.settingRow}>
-                  <div style={{ minWidth: 0 }}>
-                    <h4 style={{ margin: 0, fontSize: '1rem' }}>Include Watchlist in Insights</h4>
-                    <p
-                      style={{
-                        margin: '0.25rem 0 0',
-                        fontSize: '0.85rem',
-                        color: 'var(--text-secondary)',
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      Incorporate your overall watchlist progress, total completed episodes, and imported watch history (MyAnimeList / AniList) into Insights. When disabled, Insights strictly reflects video streamed directly inside Dango.
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    isChecked={insightsIncludeWatchlist}
-                    onChange={(e) => toggleInsightsIncludeWatchlist(e.target.checked)}
-                    id="insights-include-watchlist"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
         )
       case 'database':
@@ -613,18 +358,6 @@ const Settings: React.FC = () => {
             <OfflineDbSettings />
           </div>
         )
-      case 'local-media':
-        return (
-          <div className={styles.tabContent}>
-            <LocalMediaSettings />
-          </div>
-        )
-      case 'extensions':
-        return (
-          <div className={styles.tabContent}>
-            <ExtensionsSettings />
-          </div>
-        )
       default:
         return null
     }
@@ -633,8 +366,8 @@ const Settings: React.FC = () => {
   return (
     <div className="page-container">
       <div className={styles.settingsHeader}>
-        <h1 className={styles.pageTitle}>Settings</h1>
-        <p className={styles.pageSubtitle}>Manage your preferences and data synchronization</p>
+        <h1 className={styles.pageTitle}>Admin Settings</h1>
+        <p className={styles.pageSubtitle}>Manage system-wide configuration, user accounts, and media servers</p>
       </div>
 
       <div className={styles.settingsLayout}>
@@ -646,11 +379,18 @@ const Settings: React.FC = () => {
             <FaCog /> <span>General</span>
           </button>
           <button
+            className={`${styles.sidebarItem} ${activeTab === 'users' ? styles.active : ''}`}
+            onClick={() => selectTab('users')}
+            id="tab-users-btn"
+          >
+            <FaUsers /> <span>Users</span>
+          </button>
+          <button
             className={`${styles.sidebarItem} ${activeTab === 'themes' ? styles.active : ''}`}
             onClick={() => selectTab('themes')}
             id="tab-themes-btn"
           >
-            <FaPalette /> <span>Themes</span>
+            <FaPalette /> <span>Server Theme</span>
           </button>
           <button
             className={`${styles.sidebarItem} ${activeTab === 'local-media' ? styles.active : ''}`}
@@ -684,19 +424,6 @@ const Settings: React.FC = () => {
             onClick={() => selectTab('sync')}
           >
             <FaCloud /> <span>Synchronization</span>
-          </button>
-          <button
-            className={`${styles.sidebarItem} ${activeTab === 'watchlist' ? styles.active : ''}`}
-            onClick={() => selectTab('watchlist')}
-          >
-            <FaList /> <span>Watchlist</span>
-          </button>
-          <button
-            className={`${styles.sidebarItem} ${activeTab === 'insights' ? styles.active : ''}`}
-            onClick={() => selectTab('insights')}
-            id="tab-insights-btn"
-          >
-            <FaChartPie /> <span>Insights</span>
           </button>
           <button
             className={`${styles.sidebarItem} ${activeTab === 'database' ? styles.active : ''}`}

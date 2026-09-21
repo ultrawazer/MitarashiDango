@@ -1,19 +1,25 @@
 import { useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate, useParams, useLocation } from 'react-router'
-import toast from 'react-hot-toast'
+import { Toaster } from 'react-hot-toast'
 import Header from './components/layout/Header'
 import Sidebar from './components/layout/Sidebar'
 import Footer from './components/layout/Footer'
 import { useTelemetry } from './hooks/useTelemetry'
-import { useDiscordPageStatus } from './hooks/useDiscordRPC'
 import { useAnilistAuthCallback } from './hooks/useAnilistAuthCallback'
-import { useLocalStorage } from './hooks/useLocalStorage'
 import VirtualKeyboard from './components/common/VirtualKeyboard'
 import { useVirtualKeyboard } from './hooks/useVirtualKeyboard'
+import { useSidebar } from './hooks/useSidebar'
+import TopProgressBar from './components/common/TopProgressBar'
+import ErrorBoundary from './components/common/ErrorBoundary'
+import { AuthProvider } from './contexts/AuthProvider'
+import { useAuth } from './contexts/AuthContext'
 
 const Home = lazy(() => import('./pages/Home'))
 const Watchlist = lazy(() => import('./pages/Watchlist'))
 const Settings = lazy(() => import('./pages/Settings'))
+const UserSettings = lazy(() => import('./pages/UserSettings'))
+const Login = lazy(() => import('./pages/Login'))
+const Setup = lazy(() => import('./pages/Setup'))
 const Player = lazy(() => import('./pages/Player'))
 const Search = lazy(() => import('./pages/Search'))
 const Asmr = lazy(() => import('./pages/Asmr'))
@@ -24,14 +30,6 @@ const Insights = lazy(() => import('./pages/Insights'))
 const UserMap = lazy(() => import('./pages/Map'))
 const AnimeInfoPage = lazy(() => import('./pages/AnimeInfoPage'))
 
-import { useSidebar } from './hooks/useSidebar'
-import { Toaster } from 'react-hot-toast'
-import TopProgressBar from './components/common/TopProgressBar'
-import ErrorBoundary from './components/common/ErrorBoundary'
-import { LanAuthProvider } from './contexts/LanAuthProvider'
-import { useLanAuth } from './hooks/useLanAuth'
-import LanAuthModal from './components/modals/LanAuthModal'
-
 const PlayerRedirect = () => {
   const { id, episodeNumber } = useParams()
   return <Navigate to={episodeNumber ? `/watch/${id}/${episodeNumber}` : `/watch/${id}`} replace />
@@ -39,48 +37,11 @@ const PlayerRedirect = () => {
 
 function App() {
   const { isOpen: sidebarOpen, setIsOpen } = useSidebar()
-  const {
-    isOpen: lanAuthOpen,
-    openModal: openLanAuthModal,
-    closeModal: closeLanAuthModal,
-  } = useLanAuth()
+  const { isAuthenticated, isSetup, isLoading } = useAuth()
   const location = useLocation()
   const virtualKeyboard = useVirtualKeyboard()
   useTelemetry()
-  useDiscordPageStatus()
   useAnilistAuthCallback()
-
-  useEffect(() => {
-    fetch('/api/auth/app-status')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.hasPassword && !data.isAuthenticated) {
-          openLanAuthModal()
-        }
-      })
-      .catch(() => {})
-  }, [openLanAuthModal])
-
-  const [lanNoticeShown, setLanNoticeShown] = useLocalStorage<string>('lan_auth_notice_shown', '')
-  useEffect(() => {
-    if (!lanNoticeShown) {
-      setLanNoticeShown('true')
-      setTimeout(() => {
-        toast(
-          'Optional LAN lock is available. Set a password in Settings to protect access from other devices on your network.',
-          {
-            duration: 10000,
-            icon: '🔒',
-            style: {
-              background: '#1a3a5c',
-              color: '#fff',
-              border: '1px solid #2a5a8c',
-            },
-          }
-        )
-      }, 3000)
-    }
-  }, [lanNoticeShown, setLanNoticeShown])
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -100,16 +61,47 @@ function App() {
     }
 
     window.addEventListener('keydown', handleKeydown)
-
     return () => {
       window.removeEventListener('keydown', handleKeydown)
       document.body.classList.remove('sidebar-open')
     }
   }, [sidebarOpen, setIsOpen])
 
+  if (isLoading) {
+    return <TopProgressBar />
+  }
+
+  // Not set up yet: redirect to /setup
+  if (!isSetup) {
+    return (
+      <Suspense fallback={<TopProgressBar />}>
+        <Routes>
+          <Route path="/setup" element={<Setup />} />
+          <Route path="*" element={<Navigate to="/setup" replace />} />
+        </Routes>
+      </Suspense>
+    )
+  }
+
+  // Set up, but not authenticated: redirect to /login
+  if (!isAuthenticated) {
+    return (
+      <Suspense fallback={<TopProgressBar />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
+    )
+  }
+
+  // Authenticated user trying to visit /login or /setup: redirect to /
+  if (location.pathname === '/login' || location.pathname === '/setup') {
+    return <Navigate to="/" replace />
+  }
+
   return (
     <div className="app-container">
-      <LanAuthModal isOpen={lanAuthOpen} onClose={closeLanAuthModal} onSuccess={() => {}} />
       <Toaster
         position="top-center"
         toastOptions={{
@@ -150,6 +142,7 @@ function App() {
               <Route path="/radio" element={<Radio />} />
               <Route path="/tv" element={<Tv />} />
               <Route path="/tv/:id" element={<Tv />} />
+              <Route path="/user-settings" element={<UserSettings />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/trackers" element={<Trackers />} />
               <Route path="/mal" element={<Navigate to="/trackers" replace />} />
@@ -160,6 +153,7 @@ function App() {
               <Route path="/watch/:id/:episodeNumber" element={<Player />} />
               <Route path="/player/:id" element={<PlayerRedirect />} />
               <Route path="/player/:id/:episodeNumber" element={<PlayerRedirect />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
         </ErrorBoundary>
@@ -176,8 +170,8 @@ function App() {
 
 export default function AppWithProviders() {
   return (
-    <LanAuthProvider>
+    <AuthProvider>
       <App />
-    </LanAuthProvider>
+    </AuthProvider>
   )
 }

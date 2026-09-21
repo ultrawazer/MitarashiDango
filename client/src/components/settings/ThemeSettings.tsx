@@ -6,16 +6,30 @@ import styles from './ThemeSettings.module.css'
 import { FaPalette, FaCheck, FaPlus, FaEdit, FaTrash, FaSun, FaMoon, FaPlay } from 'react-icons/fa'
 import toast from 'react-hot-toast'
 
-export const ThemeSettings: React.FC = () => {
-  const { themes, activeTheme, activeThemeId, setTheme, createTheme, updateTheme, deleteTheme } =
-    useTheme()
+interface ThemeSettingsProps {
+  mode?: 'server' | 'user'
+}
+
+export const ThemeSettings: React.FC<ThemeSettingsProps> = ({ mode = 'user' }) => {
+  const {
+    themes,
+    activeTheme,
+    activeThemeId,
+    userThemeId,
+    serverThemeId,
+    setUserTheme,
+    setServerTheme,
+    createTheme,
+    updateTheme,
+    deleteTheme,
+  } = useTheme()
 
   const [isStudioOpen, setIsStudioOpen] = useState(false)
   const [editingThemeId, setEditingThemeId] = useState<string | null>(null)
 
   // Creator state
   const [themeName, setThemeName] = useState('')
-  const [mode, setMode] = useState<'dark' | 'light'>('dark')
+  const [modeVariant, setModeVariant] = useState<'dark' | 'light'>('dark')
   const [bgMain, setBgMain] = useState('#050505')
   const [textPrimary, setTextPrimary] = useState('#ffffff')
   const [accentPrimary, setAccentPrimary] = useState('#CE8A4B')
@@ -24,27 +38,44 @@ export const ThemeSettings: React.FC = () => {
   const presetThemes = useMemo(() => themes.filter((t) => t.isPreset), [themes])
   const customThemes = useMemo(() => themes.filter((t) => !t.isPreset), [themes])
 
+  const serverDefaultTheme = useMemo(
+    () => themes.find((t) => t.id === serverThemeId) || themes[0],
+    [themes, serverThemeId]
+  )
+
+  const isFollowingServer = mode === 'user' && (userThemeId === 'server-default' || !userThemeId)
+
   // Live sandbox preview calculation
   const previewColors = useMemo(() => {
     return deriveThemeColors({
       name: themeName,
-      mode,
+      mode: modeVariant,
       bgMain,
       textPrimary,
       accentPrimary,
       accentSecondary,
     })
-  }, [themeName, mode, bgMain, textPrimary, accentPrimary, accentSecondary])
+  }, [themeName, modeVariant, bgMain, textPrimary, accentPrimary, accentSecondary])
 
   const handleSelectTheme = (theme: Theme) => {
-    setTheme(theme.id)
-    toast.success(`Theme switched to ${theme.name}`)
+    if (mode === 'server') {
+      setServerTheme(theme.id)
+      toast.success(`Server default theme set to ${theme.name}`)
+    } else {
+      setUserTheme(theme.id)
+      toast.success(`Personal theme switched to ${theme.name}`)
+    }
+  }
+
+  const handleSelectServerDefault = () => {
+    setUserTheme('server-default')
+    toast.success('Following server default theme')
   }
 
   const handleOpenCreate = () => {
     setEditingThemeId(null)
     setThemeName('')
-    setMode('dark')
+    setModeVariant('dark')
     setBgMain('#050505')
     setTextPrimary('#ffffff')
     setAccentPrimary('#CE8A4B')
@@ -56,7 +87,7 @@ export const ThemeSettings: React.FC = () => {
     e.stopPropagation()
     setEditingThemeId(theme.id)
     setThemeName(theme.name)
-    setMode(theme.mode)
+    setModeVariant(theme.mode)
     setBgMain(theme.colors.bgMain)
     setTextPrimary(theme.colors.textPrimary)
     setAccentPrimary(theme.colors.accentPrimary)
@@ -85,7 +116,7 @@ export const ThemeSettings: React.FC = () => {
 
     const payload: CustomThemeInput = {
       name: trimmed,
-      mode,
+      mode: modeVariant,
       bgMain,
       textPrimary,
       accentPrimary,
@@ -110,7 +141,7 @@ export const ThemeSettings: React.FC = () => {
   }
 
   const handleModeToggle = (selectedMode: 'dark' | 'light') => {
-    setMode(selectedMode)
+    setModeVariant(selectedMode)
     if (selectedMode === 'light') {
       if (bgMain === '#050505' || bgMain.startsWith('#0')) setBgMain('#f8fafc')
       if (textPrimary === '#ffffff') setTextPrimary('#0f172a')
@@ -125,28 +156,51 @@ export const ThemeSettings: React.FC = () => {
       {/* Active Theme Showcase */}
       <div className={styles.activeThemeBanner} id="active-theme-banner">
         <div className={styles.activeThemeInfo}>
-          <span className={styles.activeLabel}>Current Active Theme</span>
-          <h2 className={styles.activeThemeName}>{activeTheme.name}</h2>
+          <span className={styles.activeLabel}>
+            {mode === 'server'
+              ? 'Server Default Theme'
+              : isFollowingServer
+              ? 'Personal Theme (Inheriting Server Default)'
+              : 'Active Personal Theme'}
+          </span>
+          <h2 className={styles.activeThemeName}>
+            {mode === 'server' ? serverDefaultTheme.name : activeTheme.name}
+          </h2>
         </div>
         <div className={styles.palettePreview}>
           <div className={styles.paletteChip} title="Primary Accent">
             <span
               className={styles.chipColorDot}
-              style={{ backgroundColor: activeTheme.colors.accentPrimary }}
+              style={{
+                backgroundColor:
+                  mode === 'server'
+                    ? serverDefaultTheme.colors.accentPrimary
+                    : activeTheme.colors.accentPrimary,
+              }}
             />
             <span>Primary</span>
           </div>
           <div className={styles.paletteChip} title="Secondary Accent">
             <span
               className={styles.chipColorDot}
-              style={{ backgroundColor: activeTheme.colors.accentSecondary }}
+              style={{
+                backgroundColor:
+                  mode === 'server'
+                    ? serverDefaultTheme.colors.accentSecondary
+                    : activeTheme.colors.accentSecondary,
+              }}
             />
             <span>Secondary</span>
           </div>
           <div className={styles.paletteChip} title="Canvas Background">
             <span
               className={styles.chipColorDot}
-              style={{ backgroundColor: activeTheme.colors.bgMain }}
+              style={{
+                backgroundColor:
+                  mode === 'server'
+                    ? serverDefaultTheme.colors.bgMain
+                    : activeTheme.colors.bgMain,
+              }}
             />
             <span>Canvas</span>
           </div>
@@ -156,17 +210,100 @@ export const ThemeSettings: React.FC = () => {
       {/* Preset Themes Section */}
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle}>
-          <FaPalette /> Preset Themes
+          <FaPalette /> {mode === 'server' ? 'Server Default Theme' : 'Theme Selection'}
         </h3>
         <p className={styles.sectionSubtitle}>
-          Handcrafted color palettes tailored for MitarashiDango's deep dark canvas. Click any
-          theme to apply it immediately.
+          {mode === 'server'
+            ? 'Configure the server-wide default palette. Users who have not set a personal theme will inherit this.'
+            : 'Choose a personal palette or create your own. Your selection takes priority over the server default.'}
         </p>
       </div>
 
       <div className={styles.grid} id="preset-themes-grid">
+        {mode === 'user' && (
+          <button
+            id="preset-theme-server-default"
+            type="button"
+            className={`${styles.themeCard} ${isFollowingServer ? styles.active : ''}`}
+            onClick={handleSelectServerDefault}
+          >
+            <div
+              className={styles.cardPreviewBox}
+              style={{
+                backgroundColor: serverDefaultTheme.colors.bgMain,
+                color: serverDefaultTheme.colors.textPrimary,
+              }}
+            >
+              <div className={styles.mockHeader}>
+                <div
+                  className={styles.mockLogo}
+                  style={{ backgroundColor: serverDefaultTheme.colors.accentPrimary }}
+                />
+                <div
+                  className={styles.mockAccentDot}
+                  style={{ backgroundColor: serverDefaultTheme.colors.accentSecondary }}
+                />
+              </div>
+
+              <div className={styles.mockContent}>
+                <div
+                  className={styles.mockPoster}
+                  style={{
+                    backgroundColor: serverDefaultTheme.colors.bgTertiary,
+                    border: `1px solid ${serverDefaultTheme.colors.accentPrimary}44`,
+                  }}
+                />
+                <div className={styles.mockLines}>
+                  <div
+                    className={styles.mockLineTitle}
+                    style={{ backgroundColor: serverDefaultTheme.colors.textPrimary }}
+                  />
+                  <div
+                    className={styles.mockLineSub}
+                    style={{ backgroundColor: serverDefaultTheme.colors.textSecondary }}
+                  />
+                  <div
+                    className={styles.mockBadge}
+                    style={{
+                      backgroundColor: serverDefaultTheme.colors.accentPrimary,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.cardMeta}>
+              <span className={styles.themeCardName}>
+                Server Default ({serverDefaultTheme.name})
+                {isFollowingServer && (
+                  <span className={styles.activeBadge}>
+                    <FaCheck /> Active
+                  </span>
+                )}
+              </span>
+              <div className={styles.colorSwatches}>
+                <span
+                  className={styles.swatch}
+                  style={{ backgroundColor: serverDefaultTheme.colors.accentPrimary }}
+                />
+                <span
+                  className={styles.swatch}
+                  style={{ backgroundColor: serverDefaultTheme.colors.accentSecondary }}
+                />
+                <span
+                  className={styles.swatch}
+                  style={{ backgroundColor: serverDefaultTheme.colors.bgMain }}
+                />
+              </div>
+            </div>
+          </button>
+        )}
+
         {presetThemes.map((theme) => {
-          const isActive = theme.id === activeThemeId
+          const isActive =
+            mode === 'server'
+              ? theme.id === serverThemeId
+              : !isFollowingServer && theme.id === userThemeId
           return (
             <button
               key={theme.id}
@@ -266,7 +403,10 @@ export const ThemeSettings: React.FC = () => {
 
           <div className={styles.grid} id="custom-themes-grid">
             {customThemes.map((theme) => {
-              const isActive = theme.id === activeThemeId
+              const isActive =
+                mode === 'server'
+                  ? theme.id === serverThemeId
+                  : !isFollowingServer && theme.id === userThemeId
               return (
                 <div
                   key={theme.id}
