@@ -160,6 +160,49 @@ npm install
 
 ---
 
+## Remote Access & WebGPU Configuration (LAN / Unraid / Docker)
+
+When accessing Mitarashi Dango remotely over your local network using an IP address (e.g., `http://192.168.x.xx:3000`) instead of `http://localhost`, modern browsers will treat the connection as an **insecure context**.
+
+### Why WebGPU Fails on Local IPs
+Advanced video playback features—such as **WebGPU upscalers and shaders**—strictly require a **Secure Context** (`isSecureContext`). While browsers automatically treat `http://localhost` and `http://127.0.0.1` as secure, plain HTTP access via a local LAN IP is considered insecure by default, causing the browser to disable WebGPU APIs.
+
+To resolve this when accessing the web UI across your network:
+
+### Method 1: Firefox Configuration
+
+If using Firefox to access your server via its local IP:
+
+1. **Enable Secure Context for your IP:**
+   - Open a tab, navigate to `about:config`, and click **Accept the Risk and Continue**.
+   - Search for `dom.securecontext.allowlist`. (If it does not exist, select **String** and click the **+** button).
+   - Enter your server's IP address (e.g., `192.168.x.xx`).  
+     *(Do **not** include `http://` or port numbers like `:3000`).*
+   - Verify that `dom.webgpu.enabled` is set to `true`.
+
+2. **Prevent Image Loading / Sub-resource Failures:**
+   - When an IP is marked as a secure context, Firefox by default attempts to automatically upgrade all images and sub-resources to HTTPS. Since an unencrypted local server does not listen on HTTPS, poster images and logos will fail to load.
+   - In `about:config`, set the following preferences to `false`:
+     - `security.mixed_content.upgrade_display_content` &rarr; `false`
+     - `security.mixed_content.upgrade_display_content.image` &rarr; `false`
+3. Restart Firefox.
+
+### Method 2: Chromium-based Browsers (Chrome, Edge, Brave)
+
+Chromium browsers allow explicitly trusting an insecure origin for testing and LAN use:
+
+1. Navigate to:
+   ```text
+   chrome://flags/#unsafely-treat-insecure-origin-as-secure
+   ```
+2. Enable the flag and enter the full origin with port:
+   ```text
+   http://192.168.x.xx:3000
+   ```
+3. Relaunch the browser.
+
+---
+
 ## Workspace Architecture & Storage
 
 This project is organized as an **npm workspace**:
