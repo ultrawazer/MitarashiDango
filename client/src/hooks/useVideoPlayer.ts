@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { SkipInterval, SubtitleTrack } from '../types/player'
+import { toggleFullscreen as toggleFs, subscribeFullscreen } from '../lib/fullscreen'
 
 interface VideoPlayerProps {
   skipIntervals: SkipInterval[]
@@ -244,16 +245,7 @@ const useVideoPlayer = ({
     return hours > 0 ? result : result.slice(3)
   }
   const toggleFullscreen = useCallback(() => {
-    if (!playerContainerRef.current) return
-    if (!document.fullscreenElement) {
-      playerContainerRef.current.requestFullscreen().catch((err) => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`)
-      })
-    } else {
-      if (document.fullscreenElement) {
-        document.exitFullscreen()
-      }
-    }
+    void toggleFs(playerContainerRef.current, videoRef.current)
   }, [])
 
   const togglePlay = useCallback(() => {
@@ -324,16 +316,15 @@ const useVideoPlayer = ({
   }, [setShowControls])
 
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isCurrentlyFullscreen = document.fullscreenElement !== null
-      setIsFullscreen(isCurrentlyFullscreen)
-      if (isCurrentlyFullscreen) {
-        setShowControls(true)
+    return subscribeFullscreen(
+      () => videoRef.current,
+      (active) => {
+        setIsFullscreen(active)
+        if (active) {
+          setShowControls(true)
+        }
       }
-    }
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    )
   }, [setShowControls])
 
   useEffect(() => {

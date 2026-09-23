@@ -99,7 +99,7 @@ const Home: React.FC = () => {
     fetchMoreContinueWatching,
   ])
 
-  const { data: spotlightAnime } = useSpotlightBanners()
+  const { data: spotlightAnime, isLoading: loadingSpotlight } = useSpotlightBanners()
   const { data: batchedHome } = useBatchedHome(seasonFormat)
   const cwList = useMemo(() => continueWatchingInfinite?.pages || [], [continueWatchingInfinite])
 
@@ -282,7 +282,20 @@ const Home: React.FC = () => {
 
   return (
     <div style={{ paddingBottom: '2rem' }}>
-      <SpotlightBanner animeList={spotlightAnime || []} />
+      {loadingSpotlight && !spotlightAnime?.length ? (
+        <div
+          className="skeleton"
+          style={{
+            width: '100%',
+            height: 'clamp(480px, 72vh, 660px)',
+            marginTop: 'calc(-1 * var(--header-height))',
+            marginBottom: '2.5rem',
+            borderRadius: 'var(--radius-lg)',
+          }}
+        />
+      ) : (
+        <SpotlightBanner animeList={spotlightAnime || []} />
+      )}
       <QueueRail
         title="Queue"
         items={queueData}

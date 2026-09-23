@@ -1218,13 +1218,21 @@ export interface AnilistSearchOptions {
   season?: string
   seasonYear?: number
   countryOfOrigin?: string
-  genre?: string
+  genre?: string | string[]
+  genre_in?: string[]
+  tag?: string | string[]
+  tag_in?: string[]
   genre_not_in?: string[]
   tag_not_in?: string[]
   averageScore_greater?: number
   episodes_greater?: number
   isAdult?: boolean
   sort?: string
+}
+
+function splitList(value?: string | string[]): string[] {
+  const arr = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : []
+  return [...new Set(arr.map((v) => v.trim()).filter(Boolean))]
 }
 
 export async function searchAnilist(options: AnilistSearchOptions = {}): Promise<Show[]> {
@@ -1238,6 +1246,9 @@ export async function searchAnilist(options: AnilistSearchOptions = {}): Promise
     seasonYear,
     countryOfOrigin,
     genre,
+    genre_in,
+    tag,
+    tag_in,
     genre_not_in,
     tag_not_in,
     averageScore_greater,
@@ -1263,7 +1274,17 @@ export async function searchAnilist(options: AnilistSearchOptions = {}): Promise
   if (season && season !== 'ALL') searchVars.season = season.toUpperCase()
   if (seasonYear) searchVars.seasonYear = seasonYear
   if (countryOfOrigin && countryOfOrigin !== 'ALL') searchVars.countryOfOrigin = countryOfOrigin
-  if (genre) searchVars.genre = genre
+
+  const genreList = [...splitList(genre), ...(genre_in ?? []).map((g) => g.trim()).filter(Boolean)]
+  const uniqueGenres = [...new Set(genreList)]
+  if (uniqueGenres.length === 1) searchVars.genre = uniqueGenres[0]
+  else if (uniqueGenres.length > 1) searchVars.genre_in = uniqueGenres
+
+  const tagList = [...splitList(tag), ...(tag_in ?? []).map((t) => t.trim()).filter(Boolean)]
+  const uniqueTags = [...new Set(tagList)]
+  if (uniqueTags.length === 1) searchVars.tag = uniqueTags[0]
+  else if (uniqueTags.length > 1) searchVars.tag_in = uniqueTags
+
   if (genre_not_in && genre_not_in.length > 0) searchVars.genre_not_in = genre_not_in
   if (tag_not_in && tag_not_in.length > 0) searchVars.tag_not_in = tag_not_in
   if (averageScore_greater) searchVars.averageScore_greater = averageScore_greater
@@ -1272,7 +1293,7 @@ export async function searchAnilist(options: AnilistSearchOptions = {}): Promise
   if (sort) searchVars.sort = [sort]
 
   const queryStr = `
-    query ($page: Int, $perPage: Int, $search: String, $format: MediaFormat, $status: MediaStatus, $season: MediaSeason, $seasonYear: Int, $countryOfOrigin: CountryCode, $genre: String, $genre_not_in: [String], $tag_not_in: [String], $averageScore_greater: Int, $episodes_greater: Int, $isAdult: Boolean, $sort: [MediaSort]) {
+    query ($page: Int, $perPage: Int, $search: String, $format: MediaFormat, $status: MediaStatus, $season: MediaSeason, $seasonYear: Int, $countryOfOrigin: CountryCode, $genre: String, $genre_in: [String], $tag: String, $tag_in: [String], $genre_not_in: [String], $tag_not_in: [String], $averageScore_greater: Int, $episodes_greater: Int, $isAdult: Boolean, $sort: [MediaSort]) {
       Page(page: $page, perPage: $perPage) {
         pageInfo { hasNextPage total }
         media(
@@ -1284,6 +1305,9 @@ export async function searchAnilist(options: AnilistSearchOptions = {}): Promise
           seasonYear: $seasonYear,
           countryOfOrigin: $countryOfOrigin,
           genre: $genre,
+          genre_in: $genre_in,
+          tag: $tag,
+          tag_in: $tag_in,
           genre_not_in: $genre_not_in,
           tag_not_in: $tag_not_in,
           averageScore_greater: $averageScore_greater,
@@ -1314,7 +1338,7 @@ export async function searchAnilist(options: AnilistSearchOptions = {}): Promise
         status,
         season,
         seasonYear,
-        genre,
+        genre: uniqueGenres.length > 0 ? uniqueGenres.join(',') : undefined,
         genre_not_in,
         averageScore_greater,
         episodes_greater,

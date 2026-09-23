@@ -1,33 +1,39 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, Link } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { FaStar, FaPlay, FaInfoCircle, FaChevronLeft, FaChevronRight } from 'react-icons/fa'
-import { Button } from '../common/Button'
 import type { Anime } from '../../hooks/useAnimeData'
-import { fixThumbnailUrl } from '../../lib/utils'
+import { fixThumbnailUrl, sanitizeText } from '../../lib/utils'
 import styles from './SpotlightBanner.module.css'
-import { useLowEndMode } from '../../contexts/LowEndModeContext'
 import { useTitlePreference } from '../../contexts/TitlePreferenceContext'
 
 interface SpotlightBannerProps {
   animeList: Anime[]
 }
 
+const AUTOPLAY_MS = 8000
+
 const SpotlightBanner: React.FC<SpotlightBannerProps> = ({ animeList }) => {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [autoplayResetKey, setAutoplayResetKey] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
+  const [pendingIndex, setPendingIndex] = useState<number | null>(null)
+  const [loadedTick, setLoadedTick] = useState(0)
+  const [ambient, setAmbient] = useState({ front: '', back: '', flip: false })
   const lastScrollTime = useRef(0)
   const touchStartX = useRef<number>(0)
-  const { lowEndMode } = useLowEndMode()
+  const loadedSrcs = useRef<Set<string>>(new Set())
+  const pendingTimer = useRef<number | null>(null)
+  const currentIndexRef = useRef(0)
+  const segmentsRef = useRef<HTMLDivElement>(null)
   const { titlePreference } = useTitlePreference()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const top6 = animeList.slice(0, 6)
+  const top6 = useMemo(() => animeList.slice(0, 6), [animeList])
 
+  // Pre-warm preview cache for instant navigation
   useEffect(() => {
-    const items = animeList.slice(0, 6)
-    for (const anime of items) {
+    for (const anime of top6) {
       if (!anime._id || !/^\d+$/.test(anime._id)) continue
       const existing = queryClient.getQueryData(['show-preview', anime._id])
       if (!existing) {
@@ -53,7 +59,15 @@ const SpotlightBanner: React.FC<SpotlightBannerProps> = ({ animeList }) => {
         })
       }
     }
-  }, [animeList, queryClient])
+  }, [top6, queryClient])
+
+  const bannerSrcFor = useCallback(
+    (anime: Anime) =>
+      anime.bannerImage
+        ? fixThumbnailUrl(anime.bannerImage, 1280, 560)
+        : fixThumbnailUrl(anime.thumbnail, 1280, 450),
+    []
+  )
 
   const getTitle = (anime: Anime) => {
     switch (titlePreference) {
@@ -70,35 +84,149 @@ const SpotlightBanner: React.FC<SpotlightBannerProps> = ({ animeList }) => {
     setAutoplayResetKey((k) => k + 1)
   }, [])
 
-  const selectSlide = useCallback(
+  const commitSlide = useCallback(
     (index: number) => {
+      if (pendingTimer.current !== null) {
+        window.clearTimeout(pendingTimer.current)
+        pendingTimer.current = null
+      }
+      setPendingIndex(null)
       resetAutoplay()
+      const src = bannerSrcFor(top6[index])
+      setAmbient((prev) =>
+        prev.flip
+          ? { front: src, back: prev.back, flip: false }
+          : { front: prev.front, back: src, flip: true }
+      )
       setCurrentIndex(index)
     },
-    [resetAutoplay]
+    [resetAutoplay, top6, bannerSrcFor]
+  )
+
+  const requestSlide = useCallback(
+    (index: number) => {
+      if (top6.length === 0) return
+      const target = ((index % top6.length) + top6.length) % top6.length
+      if (loadedSrcs.current.has(bannerSrcFor(top6[target]))) {
+        commitSlide(target)
+      } else {
+        setPendingIndex(target)
+      }
+    },
+    [top6, bannerSrcFor, commitSlide]
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    top6.forEach((anime) => {
+      const src = bannerSrcFor(anime)
+      if (loadedSrcs.current.has(src)) return
+      const img = new Image()
+      img.src = src
+      const markDone = () => {
+        if (cancelled || loadedSrcs.current.has(src)) return
+        loadedSrcs.current.add(src)
+        setLoadedTick((t) => t + 1)
+      }
+      img.onload = markDone
+      img.onerror = markDone
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [top6, bannerSrcFor])
+
+  useEffect(() => {
+    if (top6.length === 0) return
+    if (!ambient.front) {
+      const src = bannerSrcFor(top6[0])
+      setAmbient({ front: src, back: '', flip: false })
+    }
+  }, [top6, ambient.front, bannerSrcFor])
+
+  useEffect(() => {
+    if (pendingIndex === null) return
+    if (pendingIndex < 0 || pendingIndex >= top6.length) {
+      setPendingIndex(null)
+      return
+    }
+    if (loadedSrcs.current.has(bannerSrcFor(top6[pendingIndex]))) {
+      commitSlide(pendingIndex)
+    }
+  }, [pendingIndex, loadedTick, top6, bannerSrcFor, commitSlide])
+
+  useEffect(() => {
+    if (pendingIndex === null) return
+    if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current)
+    const target = pendingIndex
+    pendingTimer.current = window.setTimeout(() => {
+      pendingTimer.current = null
+      commitSlide(target)
+    }, 2500)
+    return () => {
+      if (pendingTimer.current !== null) {
+        window.clearTimeout(pendingTimer.current)
+        pendingTimer.current = null
+      }
+    }
+  }, [pendingIndex, commitSlide])
+
+  const selectSlide = useCallback(
+    (index: number) => {
+      requestSlide(index)
+    },
+    [requestSlide]
   )
 
   const nextSlide = useCallback(() => {
-    setCurrentIndex((prev) => (prev + 1) % top6.length)
-  }, [top6.length])
+    requestSlide(currentIndexRef.current + 1)
+  }, [requestSlide])
 
   const prevSlide = useCallback(() => {
-    setCurrentIndex((prev) => (prev - 1 + top6.length) % top6.length)
-  }, [top6.length])
+    requestSlide(currentIndexRef.current - 1)
+  }, [requestSlide])
+
+  useEffect(() => {
+    const el = segmentsRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && Math.abs(e.deltaY) > 5) {
+        e.preventDefault()
+        e.stopPropagation()
+        const now = Date.now()
+        if (now - lastScrollTime.current < 300) return
+        lastScrollTime.current = now
+        resetAutoplay()
+        if (e.deltaY > 0) nextSlide()
+        else prevSlide()
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [top6.length, nextSlide, prevSlide, resetAutoplay])
 
   useEffect(() => {
     if (top6.length === 0 || isPaused) return
-    const timer = setTimeout(nextSlide, 10000)
+    const timer = setTimeout(nextSlide, AUTOPLAY_MS)
     return () => clearTimeout(timer)
   }, [currentIndex, nextSlide, top6.length, autoplayResetKey, isPaused])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
       if (e.key === 'ArrowRight') {
         e.preventDefault()
         nextSlide()
-      }
-      if (e.key === 'ArrowLeft') {
+      } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
         prevSlide()
       }
@@ -107,40 +235,19 @@ const SpotlightBanner: React.FC<SpotlightBannerProps> = ({ animeList }) => {
     return () => window.removeEventListener('keydown', handleKey)
   }, [nextSlide, prevSlide])
 
+  useEffect(() => {
+    if (currentIndex >= top6.length) {
+      setCurrentIndex(0)
+    }
+  }, [top6.length, currentIndex])
+
   if (top6.length === 0) return null
 
-  const anime = top6[currentIndex]
+  const safeIndex = currentIndex >= top6.length ? 0 : currentIndex
+  currentIndexRef.current = safeIndex
 
-  const rawDesc = anime.description ?? ''
-  const synopsis = rawDesc.replace(/<[^>]*>?/gm, '').trim()
-  const genres = anime.genres ?? []
-
-  const bannerSrc = anime.bannerImage
-    ? fixThumbnailUrl(anime.bannerImage, 1920, 840)
-    : fixThumbnailUrl(anime.thumbnail, 1280, 450)
-
-  const handleWatch = () => {
-    navigate(`/watch/${anime._id}`)
-  }
-
-  const metadata = [
-    anime.type || 'Anime',
-    anime.status,
-    anime.episodeCount ? `${anime.episodeCount} Episodes` : undefined,
-    anime.rating,
-  ].filter(Boolean)
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && Math.abs(e.deltaY) > 5) {
-      e.preventDefault()
-      e.stopPropagation()
-      const now = Date.now()
-      if (now - lastScrollTime.current < 300) return
-      lastScrollTime.current = now
-      resetAutoplay()
-      if (e.deltaY > 0) nextSlide()
-      else prevSlide()
-    }
+  const handleWatch = (id: string) => {
+    navigate(`/watch/${id}`)
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -164,16 +271,129 @@ const SpotlightBanner: React.FC<SpotlightBannerProps> = ({ animeList }) => {
       onMouseLeave={() => setIsPaused(false)}
     >
       <div
-        className={styles.posterWrapper}
+        className={`${styles.hero} ${isPaused ? styles.paused : ''}`}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <img
-          key={`${currentIndex}-${autoplayResetKey}`}
-          src={bannerSrc}
-          alt={getTitle(anime)}
-          className={`${styles.posterImage} ${!lowEndMode ? styles.fadeIn : ''}`}
-        />
+        {ambient.front && (
+          <img
+            src={ambient.front}
+            alt=""
+            aria-hidden="true"
+            className={`${styles.ambient} ${!ambient.flip ? styles.ambientShow : ''}`}
+          />
+        )}
+        {ambient.back && (
+          <img
+            src={ambient.back}
+            alt=""
+            aria-hidden="true"
+            className={`${styles.ambient} ${ambient.flip ? styles.ambientShow : ''}`}
+          />
+        )}
+        <div className={styles.scrim} aria-hidden="true" />
+
+        {top6.length > 1 && (
+          <div className={styles.segments} ref={segmentsRef}>
+            {top6.map((_, index) => (
+              <i
+                key={`${autoplayResetKey}-${index}`}
+                className={`${index < safeIndex ? styles.done : ''} ${index === safeIndex ? styles.live : ''}`}
+                onClick={() => selectSlide(index)}
+                aria-label={`Go to slide ${index + 1}`}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className={styles.viewport}>
+          <div className={styles.track} style={{ transform: `translateX(-${safeIndex * 100}%)` }}>
+            {top6.map((anime, index) => {
+              const synopsis = sanitizeText(anime.description ?? '')
+              const genres = anime.genres ?? []
+              const metadata = [
+                anime.type || 'Anime',
+                anime.status,
+                anime.episodeCount ? `${anime.episodeCount} Episodes` : undefined,
+                anime.rating,
+              ].filter(Boolean)
+              return (
+                <div
+                  key={anime._id}
+                  className={`${styles.slide} ${index === safeIndex ? styles.active : ''}`}
+                  aria-hidden={index !== safeIndex}
+                >
+                  <div className={styles.slideInner}>
+                    <img
+                      src={fixThumbnailUrl(anime.thumbnail, 460, 650)}
+                      alt={getTitle(anime)}
+                      className={styles.poster}
+                      decoding="async"
+                    />
+                    <div className={styles.info}>
+                      <div className={`${styles.kicker} ${styles.rise}`}>
+                        <span className={styles.featureLabel}>Spotlight</span>
+                        {anime.score && (
+                          <span className={styles.scoreChip}>
+                            <FaStar size={12} />
+                            <span>{anime.score}</span>
+                          </span>
+                        )}
+                      </div>
+                      <Link
+                        to={`/anime/${anime._id}`}
+                        className={`${styles.title} ${styles.rise}`}
+                        aria-label={`View details for ${getTitle(anime)}`}
+                        tabIndex={index === safeIndex ? 0 : -1}
+                      >
+                        {getTitle(anime)}
+                      </Link>
+                      <div className={`${styles.metaRow} ${styles.rise}`}>
+                        {metadata.map((item, idx) => (
+                          <React.Fragment key={idx}>
+                            <span className={styles.metaItem}>{item}</span>
+                            {idx < metadata.length - 1 && <div className={styles.metaDivider} />}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                      {genres.length > 0 && (
+                        <div className={`${styles.genres} ${styles.rise}`}>
+                          {genres.slice(0, 3).map((g) => {
+                            const genreName = typeof g === 'string' ? g : g?.name
+                            return (
+                              <span key={genreName} className={styles.genreTag}>
+                                {genreName}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {synopsis && <p className={`${styles.summary} ${styles.rise}`}>{synopsis}</p>}
+                      <div className={`${styles.actions} ${styles.rise}`}>
+                        <button
+                          className={styles.watchBtn}
+                          onClick={() => handleWatch(anime._id)}
+                          tabIndex={index === safeIndex ? 0 : -1}
+                        >
+                          <FaPlay size={14} />
+                          <span>Watch Now</span>
+                        </button>
+                        <button
+                          className={styles.detailsBtn}
+                          onClick={() => navigate(`/anime/${anime._id}`)}
+                          tabIndex={index === safeIndex ? 0 : -1}
+                        >
+                          <FaInfoCircle size={15} />
+                          <span>Details</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
 
         {top6.length > 1 && (
           <>
@@ -199,84 +419,6 @@ const SpotlightBanner: React.FC<SpotlightBannerProps> = ({ animeList }) => {
             </button>
           </>
         )}
-
-        {top6.length > 1 && (
-          <div
-            key={`progress-${currentIndex}-${autoplayResetKey}`}
-            className={`${styles.progressBar} ${isPaused ? styles.progressBarPaused : ''}`}
-          />
-        )}
-
-        <div className={styles.overlay}>
-          <div className={styles.content}>
-            <div className={styles.badgeRow}>
-              <span className={styles.featureLabel}>Featured</span>
-              {anime.score && (
-                <div className={styles.metaRow} style={{ color: '#fbbf24' }}>
-                  <FaStar size={14} />
-                  <span>{anime.score}</span>
-                </div>
-              )}
-            </div>
-
-            <Link
-              key={currentIndex}
-              to={`/anime/${anime._id}`}
-              className={styles.title}
-              aria-label={`View details for ${getTitle(anime)}`}
-            >
-              {getTitle(anime)}
-            </Link>
-
-            <div className={styles.metaRow}>
-              {metadata.map((item, idx) => (
-                <React.Fragment key={idx}>
-                  <span className={styles.metaItem}>{item}</span>
-                  {idx < metadata.length - 1 && <div className={styles.metaDivider} />}
-                </React.Fragment>
-              ))}
-            </div>
-
-            {genres.length > 0 && (
-              <div className={styles.genres}>
-                {genres.map((g) => {
-                  const genreName = typeof g === 'string' ? g : g?.name
-                  return (
-                    <span key={genreName} className={styles.genreTag}>
-                      {genreName}
-                    </span>
-                  )
-                })}
-              </div>
-            )}
-
-            {synopsis && <p className={styles.summary}>{synopsis}</p>}
-
-            <div className={styles.actions}>
-              <button className={styles.watchBtn} onClick={handleWatch}>
-                <FaPlay size={14} />
-                <span>Watch Now</span>
-              </button>
-              <button className={styles.detailsBtn} onClick={() => navigate(`/anime/${anime._id}`)}>
-                <FaInfoCircle size={15} />
-                <span>Details</span>
-              </button>
-            </div>
-          </div>
-
-          {top6.length > 1 && (
-            <div className={styles.dotRow} onWheel={handleWheel}>
-              {top6.map((_, index) => (
-                <button
-                  key={index}
-                  className={index === currentIndex ? styles.activeDot : ''}
-                  onClick={() => selectSlide(index)}
-                  aria-label={`Go to slide ${index + 1}`}
-                />
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )

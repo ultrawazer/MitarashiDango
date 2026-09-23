@@ -7,7 +7,7 @@ import { pipeline } from 'stream/promises'
 import logger from './logger'
 import { CONFIG } from './config'
 import { DatabaseWrapper } from './db'
-import { dbAll } from './utils/db-utils'
+import { dbAll, dbGet } from './utils/db-utils'
 
 type GoogleTokenSet = {
   access_token?: string
@@ -603,6 +603,21 @@ export class GoogleDriveService {
       tables: Record<string, Array<Record<string, string | number | null>>>
     }
   ) {
+    const remoteLibraryRows =
+      (payload.tables.watchlist?.length ?? 0) + (payload.tables.watched_episodes?.length ?? 0)
+    const localLibraryRows =
+      dbGet<{ n: number }>(
+        db,
+        'SELECT (SELECT COUNT(*) FROM watchlist) + (SELECT COUNT(*) FROM watched_episodes) AS n'
+      )?.n ?? 0
+    if (remoteLibraryRows === 0 && localLibraryRows > 0) {
+      throw new Error('Sync down refused: remote library is empty while local library has data')
+    }
+    try {
+      db.backup(path.join(CONFIG.ROOT, 'pre-sync-backup.db'))
+    } catch (err) {
+      logger.warn({ err }, 'Pre-sync backup failed, continuing without backup')
+    }
     const tables = [
       'watchlist',
       'watched_episodes',
@@ -613,13 +628,19 @@ export class GoogleDriveService {
       'dismissed_notifications',
       'discovered_notifications',
     ] as const
+    const localColumns = new Map<string, Set<string>>()
+    for (const table of tables) {
+      const cols = db.all<{ name: string }>(`PRAGMA table_info("${table}")`)
+      localColumns.set(table, new Set(cols.map((c) => c.name)))
+    }
     db.serialize(() => {
       for (const table of tables) {
         db.run(`DELETE FROM "${table}"`)
       }
       for (const table of tables) {
+        const known = localColumns.get(table)
         for (const row of payload.tables[table] || []) {
-          const columns = Object.keys(row)
+          const columns = Object.keys(row).filter((c) => known?.has(c))
           if (columns.length === 0) continue
           const columnSql = columns.map((c) => `"${c.replace(/"/g, '""')}"`).join(', ')
           const placeholders = columns.map(() => '?').join(', ')

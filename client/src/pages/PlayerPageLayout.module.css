@@ -40,6 +40,8 @@
   background-color: #000;
   border-radius: var(--radius-lg);
   overflow: hidden;
+  overflow: clip;
+  isolation: isolate;
   position: relative;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
   border: 1px solid var(--glass-border);

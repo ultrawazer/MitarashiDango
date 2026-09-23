@@ -15,7 +15,7 @@ import {
   FaForward,
   FaClosedCaptioning,
 } from 'react-icons/fa'
-import { MdReplay10, MdForward10, MdFastForward, MdSkipNext } from 'react-icons/md'
+import { MdReplay10, MdForward10 } from 'react-icons/md'
 import type { VideoSource, VideoLink, SkipInterval } from '../../types/player'
 import type useVideoPlayer from '../../hooks/useVideoPlayer'
 
@@ -45,6 +45,12 @@ interface PlayerControlsProps {
   anime4kProfile?: 'low' | 'balanced' | 'high' | 'denoise'
   onAnime4kProfileChange?: (profile: 'low' | 'balanced' | 'high' | 'denoise') => void
   anime4kInitializing?: boolean
+  anime4kError?: string | null
+  anime4kZeroCopy?: boolean
+  onAnime4kZeroCopyToggle?: () => void
+  avSyncDelay?: number
+  onAvSyncDelayChange?: (ms: number) => void
+  onOpenAvSyncCalibrator?: () => void
   actualStreamStartTime?: number | null
 }
 
@@ -72,6 +78,12 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   anime4kProfile,
   onAnime4kProfileChange,
   anime4kInitializing,
+  anime4kError,
+  anime4kZeroCopy,
+  onAnime4kZeroCopyToggle,
+  avSyncDelay,
+  onAvSyncDelayChange,
+  onOpenAvSyncCalibrator,
   actualStreamStartTime,
 }) => {
   const { state, refs, actions } = player
@@ -587,28 +599,6 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
             </div>
 
             <button
-              className={`${styles.controlBtn} ${state.isAutoSkipEnabled ? styles.active : ''}`}
-              onClick={() => {
-                const newValue = !state.isAutoSkipEnabled
-                actions.setIsAutoSkipEnabled(newValue)
-                localStorage.setItem('autoSkipEnabled', newValue.toString())
-              }}
-              title={state.isAutoSkipEnabled ? 'Disable Auto Skip' : 'Enable Auto Skip'}
-              aria-label="Auto Skip"
-            >
-              <MdFastForward size={22} />
-            </button>
-
-            <button
-              className={`${styles.controlBtn} ${isAutoplayEnabled ? styles.active : ''}`}
-              onClick={() => onAutoplayChange(!isAutoplayEnabled)}
-              title={isAutoplayEnabled ? 'Disable Autoplay' : 'Enable Autoplay'}
-              aria-label="Autoplay"
-            >
-              <MdSkipNext size={24} />
-            </button>
-
-            <button
               className={`${styles.controlBtn} ${isSubtitleActive ? styles.active : ''}`}
               onClick={handleCCToggle}
               title={isSubtitleActive ? 'Disable Subtitles' : 'Enable Subtitles'}
@@ -684,6 +674,23 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
           anime4kProfile={anime4kProfile}
           onAnime4kProfileChange={onAnime4kProfileChange}
           anime4kInitializing={anime4kInitializing}
+          anime4kError={anime4kError}
+          anime4kZeroCopy={anime4kZeroCopy}
+          onAnime4kZeroCopyToggle={onAnime4kZeroCopyToggle}
+          avSyncDelay={avSyncDelay}
+          onAvSyncDelayChange={onAvSyncDelayChange}
+          onOpenAvSyncCalibrator={onOpenAvSyncCalibrator}
+          isAutoSkipEnabled={state.isAutoSkipEnabled}
+          onAutoSkipChange={(value) => {
+            actions.setIsAutoSkipEnabled(value)
+            try {
+              localStorage.setItem('autoSkipEnabled', value.toString())
+            } catch {
+              // ignore
+            }
+          }}
+          isAutoplayEnabled={isAutoplayEnabled}
+          onAutoplayChange={onAutoplayChange}
         />
       </Suspense>
     </div>

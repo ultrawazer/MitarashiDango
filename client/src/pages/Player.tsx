@@ -34,6 +34,8 @@ import SourceSelector from '../components/player/SourceSelector'
 import { ProviderSelector } from '../components/player/SourceSelector'
 import useVideoPlayer from '../hooks/useVideoPlayer'
 import useAnime4K, { type Profile as Anime4KProfile } from '../hooks/useAnime4K'
+import useDelayCanvas from '../hooks/useDelayCanvas'
+import AvSyncCalibrator from '../components/player/AvSyncCalibrator'
 import { usePlayerData } from '../hooks/usePlayerData'
 import { useQueue, useRemoveFromQueue, useClearQueue, useReorderQueue } from '../hooks/useAnimeData'
 import type { QueueItem } from '../hooks/useAnimeData'
@@ -307,21 +309,53 @@ const Player: React.FC = () => {
   const [anime4kProfile, setAnime4kProfile] = useState<Anime4KProfile>(() => {
     return (localStorage.getItem('anime4kProfile') as Anime4KProfile) || 'balanced'
   })
+  const [anime4kZeroCopy, setAnime4kZeroCopy] = useState<boolean>(() => {
+    return localStorage.getItem('anime4k_zero_copy') !== 'false'
+  })
+  const [avSyncDelay, setAvSyncDelay] = useState<number>(() => {
+    const saved = localStorage.getItem('av_sync_delay_ms')
+    return saved ? parseInt(saved, 10) || 0 : 0
+  })
+  const [isAvSyncCalibratorOpen, setIsAvSyncCalibratorOpen] = useState(false)
+  const delayCanvasRef = useRef<HTMLCanvasElement>(null)
 
   const {
     isWebGPUSupported: isAnime4kSupported,
     isEnabled: isAnime4kEnabled,
     isInitializing: isAnime4kInitializing,
+    error: anime4kError,
     toggle: toggleAnime4k,
   } = useAnime4K({
     videoRef: refs.videoRef,
     canvasRef: upscalerCanvasRef,
     profile: anime4kProfile,
+    zeroCopy: anime4kZeroCopy,
+    delayMs: avSyncDelay,
+  })
+
+  useDelayCanvas({
+    videoRef: refs.videoRef,
+    canvasRef: delayCanvasRef,
+    delayMs: avSyncDelay,
+    enabled: avSyncDelay > 0 && !isAnime4kEnabled,
   })
 
   const handleAnime4kProfileChange = useCallback((profile: Anime4KProfile) => {
     setAnime4kProfile(profile)
     localStorage.setItem('anime4kProfile', profile)
+  }, [])
+
+  const handleAnime4kZeroCopyToggle = useCallback(() => {
+    setAnime4kZeroCopy((prev) => {
+      const next = !prev
+      localStorage.setItem('anime4k_zero_copy', String(next))
+      return next
+    })
+  }, [])
+
+  const handleAvSyncDelayChange = useCallback((ms: number) => {
+    setAvSyncDelay(ms)
+    localStorage.setItem('av_sync_delay_ms', String(ms))
   }, [])
 
   const handleAudioTrackChange = useCallback(
@@ -1522,7 +1556,7 @@ const Player: React.FC = () => {
   ])
 
   useEffect(() => {
-    if (!isAnime4kEnabled) {
+    if (!isAnime4kEnabled && avSyncDelay <= 0) {
       if (subtitleOverlayRef.current) {
         subtitleOverlayRef.current.innerHTML = ''
       }
@@ -1567,7 +1601,7 @@ const Player: React.FC = () => {
           color: white;
           background: rgba(0, 0, 0, 0.5);
           font-size: ${fontSize};
-          text-shadow: 0 0 4px black;
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 4px black, 0 2px 8px rgba(0, 0, 0, 0.8);
           padding: 2px 8px;
           border-radius: 4px;
           max-width: 85%;
@@ -1606,7 +1640,7 @@ const Player: React.FC = () => {
       video.textTracks?.removeEventListener('addtrack', handleAddTrack)
       if (overlay) overlay.innerHTML = ''
     }
-  }, [isAnime4kEnabled, player.state.subtitleFontSize, player.state.subtitlePosition, refs.videoRef])
+  }, [isAnime4kEnabled, avSyncDelay, player.state.subtitleFontSize, player.state.subtitlePosition, refs.videoRef])
 
   const handleResume = () => {
     if (refs.videoRef.current) {
@@ -2037,6 +2071,12 @@ const Player: React.FC = () => {
                     anime4kProfile={anime4kProfile}
                     onAnime4kProfileChange={handleAnime4kProfileChange}
                     anime4kInitializing={isAnime4kInitializing}
+                    anime4kError={anime4kError}
+                    anime4kZeroCopy={anime4kZeroCopy}
+                    onAnime4kZeroCopyToggle={handleAnime4kZeroCopyToggle}
+                    avSyncDelay={avSyncDelay}
+                    onAvSyncDelayChange={handleAvSyncDelayChange}
+                    onOpenAvSyncCalibrator={() => setIsAvSyncCalibratorOpen(true)}
                     actualStreamStartTime={actualStreamStartTime}
                   />
                 )}{' '}
@@ -2044,7 +2084,7 @@ const Player: React.FC = () => {
                 <>
                   <video
                     ref={refs.videoRef}
-                    className={isAnime4kEnabled ? styles.videoElementHidden : undefined}
+                    className={isAnime4kEnabled || avSyncDelay > 0 ? styles.videoElementHidden : undefined}
                     controls={player.state.useNativeControls}
                     playsInline
                     webkit-playsinline="true"
@@ -2075,7 +2115,13 @@ const Player: React.FC = () => {
                     ref={upscalerCanvasRef}
                     className={`${styles.upscalerCanvas} ${isAnime4kEnabled ? styles.upscalerActive : ''}`}
                   />
-                  {isAnime4kEnabled && (
+                  {avSyncDelay > 0 && !isAnime4kEnabled && (
+                    <canvas
+                      ref={delayCanvasRef}
+                      className={`${styles.upscalerCanvas} ${styles.upscalerActive}`}
+                    />
+                  )}
+                  {(isAnime4kEnabled || avSyncDelay > 0) && (
                     <div ref={subtitleOverlayRef} className={styles.subtitleOverlay} />
                   )}
                 </>
@@ -2306,6 +2352,13 @@ const Player: React.FC = () => {
           setIsEpisodeDrawerOpen(false)
           navigate(`/watch/${showId}/${ep}`)
         }}
+      />
+
+      <AvSyncCalibrator
+        isOpen={isAvSyncCalibratorOpen}
+        onClose={() => setIsAvSyncCalibratorOpen(false)}
+        delayMs={avSyncDelay}
+        onDelayChange={handleAvSyncDelayChange}
       />
     </div>
   )
