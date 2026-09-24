@@ -1,8 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 
+const getAuthHeaders = (): Record<string, string> => {
+  try {
+    const token = localStorage.getItem('dango_auth_token') || sessionStorage.getItem('dango_auth_token')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  } catch {
+    return {}
+  }
+}
+
 const fetchSettings = async (key: string) => {
-  const response = await fetch(`/api/settings?key=${key}`)
+  const response = await fetch(`/api/settings?key=${key}`, {
+    headers: getAuthHeaders(),
+  })
   if (!response.ok) {
     throw new Error('Failed to fetch settings')
   }
@@ -13,7 +24,10 @@ const fetchSettings = async (key: string) => {
 const updateSettings = async ({ key, value }: { key: string; value: unknown }) => {
   const response = await fetch('/api/settings', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
     body: JSON.stringify({ key, value }),
   })
   if (!response.ok) {

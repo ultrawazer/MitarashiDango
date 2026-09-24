@@ -17,6 +17,13 @@ import {
   FaListUl,
 } from 'react-icons/fa'
 import { fixThumbnailUrl } from '../lib/utils'
+import {
+  buildCueCss,
+  buildOverlayCss,
+  renderCueHtml,
+  stripCueTags,
+  type SubtitleStyleSettings,
+} from '../lib/subtitleStyle'
 import GenericModal from '../components/common/GenericModal'
 import { Button } from '../components/common/Button'
 import { useMatureConsent } from '../hooks/useMatureConsent'
@@ -1437,16 +1444,17 @@ const Player: React.FC = () => {
       document.head.appendChild(styleTag)
     }
 
-    const fontSize = `${player.state.subtitleFontSize}rem`
+    const subtitleStyle: SubtitleStyleSettings = {
+      fontSize: player.state.subtitleFontSize,
+      position: player.state.subtitlePosition,
+      bgOpacity: player.state.subtitleBgOpacity,
+      bgColor: player.state.subtitleBgColor,
+      textColor: player.state.subtitleTextColor,
+      edge: player.state.subtitleEdge,
+      bold: player.state.subtitleBold,
+    }
 
-    styleTag.textContent = `
-  video::cue {
-    font-size: ${fontSize} !important;
-    background-color: rgba(0, 0, 0, 0.5) !important;
-    color: white !important;
-    text-shadow: 0 0 4px black;
-  }
-  `
+    styleTag.textContent = buildCueCss(subtitleStyle)
 
     const video = refs.videoRef.current
     if (!video) return
@@ -1548,6 +1556,11 @@ const Player: React.FC = () => {
   }, [
     player.state.subtitleFontSize,
     player.state.subtitlePosition,
+    player.state.subtitleBgOpacity,
+    player.state.subtitleBgColor,
+    player.state.subtitleTextColor,
+    player.state.subtitleEdge,
+    player.state.subtitleBold,
     player.state.activeSubtitleTrack,
     player.state.availableSubtitles,
     state.selectedSource,
@@ -1587,29 +1600,26 @@ const Player: React.FC = () => {
         return
       }
 
-      const fontSize = `${player.state.subtitleFontSize || 2}rem`
+      const subtitleStyle: SubtitleStyleSettings = {
+        fontSize: player.state.subtitleFontSize,
+        position: player.state.subtitlePosition,
+        bgOpacity: player.state.subtitleBgOpacity,
+        bgColor: player.state.subtitleBgColor,
+        textColor: player.state.subtitleTextColor,
+        edge: player.state.subtitleEdge,
+        bold: player.state.subtitleBold,
+      }
+      const baseCss = buildOverlayCss(subtitleStyle)
       const lift = Math.max(0, Math.min(100, Number(player.state.subtitlePosition) || 0))
       const bottom = `${lift + 5}%`
 
       overlay.innerHTML = `
         <div style="
-          position: absolute;
+          ${baseCss}
           bottom: ${bottom};
-          left: 50%;
-          transform: translateX(-50%);
-          text-align: center;
-          color: white;
-          background: rgba(0, 0, 0, 0.5);
-          font-size: ${fontSize};
-          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 4px black, 0 2px 8px rgba(0, 0, 0, 0.8);
-          padding: 2px 8px;
-          border-radius: 4px;
-          max-width: 85%;
-          line-height: 1.3;
           pointer-events: none;
-          white-space: pre-wrap;
         ">
-          ${activeText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+          ${renderCueHtml(activeText)}
         </div>
       `
     }
@@ -1640,7 +1650,18 @@ const Player: React.FC = () => {
       video.textTracks?.removeEventListener('addtrack', handleAddTrack)
       if (overlay) overlay.innerHTML = ''
     }
-  }, [isAnime4kEnabled, avSyncDelay, player.state.subtitleFontSize, player.state.subtitlePosition, refs.videoRef])
+  }, [
+    isAnime4kEnabled,
+    avSyncDelay,
+    player.state.subtitleFontSize,
+    player.state.subtitlePosition,
+    player.state.subtitleBgOpacity,
+    player.state.subtitleBgColor,
+    player.state.subtitleTextColor,
+    player.state.subtitleEdge,
+    player.state.subtitleBold,
+    refs.videoRef,
+  ])
 
   const handleResume = () => {
     if (refs.videoRef.current) {

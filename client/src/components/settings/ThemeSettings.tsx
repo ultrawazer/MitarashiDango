@@ -5,6 +5,7 @@ import { deriveThemeColors } from '../../utils/themeUtils'
 import styles from './ThemeSettings.module.css'
 import { FaPalette, FaCheck, FaPlus, FaEdit, FaTrash, FaSun, FaMoon, FaPlay } from 'react-icons/fa'
 import toast from 'react-hot-toast'
+import { SpotlightSettings } from './SpotlightSettings'
 
 interface ThemeSettingsProps {
   mode?: 'server' | 'user'
@@ -206,6 +207,9 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({ mode = 'user' }) =
           </div>
         </div>
       </div>
+
+      {/* Spotlight Banner Appearance & Blur */}
+      <SpotlightSettings mode={mode} />
 
       {/* Preset Themes Section */}
       <div className={styles.sectionHeader}>

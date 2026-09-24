@@ -65,6 +65,7 @@ interface WatchedEpisodeWithMeta {
   showId: string
   currentTime: number
   duration: number
+  effectiveSeconds?: number
   episodeCount?: number
   genres: string
   popularityScore: number
@@ -111,7 +112,7 @@ export class InsightsController {
       ActivityDay[],
       HourlyStat[],
       SeasonalStat[],
-      { watchedAt: string; currentTime: number }[],
+      { watchedAt: string; currentTime: number; effectiveSeconds?: number }[],
       WatchedShowMeta[],
       DroppedShow[],
       CompletionVelocity[],
@@ -121,15 +122,15 @@ export class InsightsController {
 
     const sessions: number[] = []
     if (allWatches.length > 0) {
-      let currentSessionSeconds = allWatches[0].currentTime
+      let currentSessionSeconds = allWatches[0].effectiveSeconds ?? allWatches[0].currentTime
       for (let i = 1; i < allWatches.length; i++) {
         const prev = new Date(allWatches[i - 1].watchedAt).getTime()
         const curr = new Date(allWatches[i].watchedAt).getTime()
         if (curr - prev < 3600000) {
-          currentSessionSeconds += allWatches[i].currentTime
+          currentSessionSeconds += allWatches[i].effectiveSeconds ?? allWatches[i].currentTime
         } else {
           sessions.push(currentSessionSeconds)
-          currentSessionSeconds = allWatches[i].currentTime
+          currentSessionSeconds = allWatches[i].effectiveSeconds ?? allWatches[i].currentTime
         }
       }
       sessions.push(currentSessionSeconds)
@@ -162,7 +163,9 @@ export class InsightsController {
       }
 
       if (show.popularityScore) {
-        totalPopScore += show.popularityScore
+        let score = show.popularityScore
+        if (score > 10) score = score / 10
+        totalPopScore += score
         popCount++
       }
     }
@@ -275,7 +278,7 @@ export class InsightsController {
         }
       }
 
-      const timeWatched = (row.currentTime || 0) + (row.duration || 0)
+      const timeWatched = (row.effectiveSeconds ?? row.currentTime) || 0
       let score = row.popularityScore || 0
       if (score > 10) score = score / 10
       const epCount = row.episodeCount || 1

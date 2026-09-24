@@ -131,3 +131,8 @@ export const sanitizeText = (text: string | undefined | null): string => {
   return text.replace(/<[^>]*>?/gm, '').trim()
 }
 
+export function normalizeScore(score: number | null | undefined): number | null | undefined {
+  if (score == null) return score
+  return score > 10 ? Number((score / 10).toFixed(1)) : score
+}
+

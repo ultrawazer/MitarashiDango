@@ -17,8 +17,6 @@ import AdminUserManagement from '../components/settings/AdminUserManagement'
 import { useLowEndMode } from '../contexts/LowEndModeContext'
 import { useAuth } from '../contexts/AuthContext'
 import ToggleSwitch from '../components/common/ToggleSwitch'
-import packageJson from '../../../package.json'
-import { deleteTelemetryData } from '../hooks/useTelemetry'
 import {
   getVirtualKeyboardEnabled,
   VIRTUAL_KEYBOARD_ENABLED_CHANGE_EVENT,
@@ -26,9 +24,9 @@ import {
 } from '../hooks/useVirtualKeyboard'
 import { useSystemNotifications } from '../hooks/useAnimeData'
 
-type SettingsTab = 'general' | 'users' | 'themes' | 'local-media' | 'extensions' | 'sync' | 'database'
+type SettingsTab = 'general' | 'users' | 'themes' | 'appearance' | 'local-media' | 'extensions' | 'sync' | 'database'
 
-const VALID_TABS: SettingsTab[] = ['general', 'users', 'themes', 'local-media', 'extensions', 'sync', 'database']
+const VALID_TABS: SettingsTab[] = ['general', 'users', 'themes', 'appearance', 'local-media', 'extensions', 'sync', 'database']
 
 const Settings: React.FC = () => {
   const { isAdmin, isLoading: isAuthLoading } = useAuth()
@@ -36,17 +34,13 @@ const Settings: React.FC = () => {
   const navigate = useNavigate()
   const initialTab = searchParams.get('tab') as SettingsTab | null
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    initialTab && VALID_TABS.includes(initialTab) ? initialTab : 'general'
+    initialTab && VALID_TABS.includes(initialTab)
+      ? initialTab === 'appearance' ? 'themes' : initialTab
+      : 'general'
   )
   const [statusMessage, setStatusMessage] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { lowEndMode, setLowEndMode } = useLowEndMode()
-  const [telemetryEnabled, setTelemetryEnabled] = useState(
-    localStorage.getItem('telemetry_enabled') === 'true'
-  )
-  const [installationId, setInstallationId] = useState<string>(
-    localStorage.getItem('installation_id') || ''
-  )
   const { data: systemNotifications = [] } = useSystemNotifications()
   const hasExtensionUpdates = systemNotifications.some((sn) => sn.id === 'system-extension-updates')
 
@@ -56,29 +50,9 @@ const Settings: React.FC = () => {
     }
   }, [isAdmin, isAuthLoading, navigate])
 
-  useEffect(() => {
-    fetch('/api/installation-id')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.id) {
-          setInstallationId(data.id)
-          localStorage.setItem('installation_id', data.id)
-        }
-      })
-      .catch(() => {
-        // fallback: keep whatever is in localStorage
-      })
-  }, [])
   const [virtualKeyboardEnabled, setVirtualKeyboardEnabled] = useState(getVirtualKeyboardEnabled)
 
 
-  const toggleTelemetry = (enabled: boolean) => {
-    setTelemetryEnabled(enabled)
-    localStorage.setItem('telemetry_enabled', String(enabled))
-    if (!enabled) {
-      deleteTelemetryData()
-    }
-  }
 
   const toggleVirtualKeyboard = (enabled: boolean) => {
     setVirtualKeyboardEnabled(enabled)
@@ -202,71 +176,6 @@ const Settings: React.FC = () => {
                 </div>
               </div>
 
-              <div className={styles.settingItem} style={{ marginTop: '1.5rem' }}>
-                <div className={styles.settingRow}>
-                  <div style={{ minWidth: 0 }}>
-                    <h4 style={{ margin: 0, fontSize: '1rem' }}>Telemetry Tracking</h4>
-                    <p
-                      style={{
-                        margin: '0.25rem 0 0',
-                        fontSize: '0.85rem',
-                        color: 'var(--text-secondary)',
-                      }}
-                    >
-                      Share anonymous installation data to help track active users and timezone.
-                      Collected: Hardware-based Anonymous ID, App Version, First Seen/Last Seen
-                      timestamps, User Agent string, and timezone (e.g. 'Europe/Berlin'). No other
-                      personal information or usage habits are collected.
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    isChecked={telemetryEnabled}
-                    onChange={(e) => toggleTelemetry(e.target.checked)}
-                    id="telemetry-enabled"
-                  />
-                </div>
-                {telemetryEnabled && (
-                  <div
-                    style={{
-                      marginTop: '0.75rem',
-                      fontSize: '0.8rem',
-                      color: 'var(--text-secondary)',
-                    }}
-                  >
-                    <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>
-                      Data currently being shared:
-                    </p>
-                    <div
-                      style={{
-                        background: 'var(--bg-tertiary)',
-                        padding: '0.5rem',
-                        borderRadius: '4px',
-                        wordBreak: 'break-all',
-                        fontFamily: 'monospace',
-                      }}
-                    >
-                      <p style={{ margin: '0' }}>
-                        <strong>ID:</strong> {installationId || 'Loading...'}
-                      </p>
-                      <p style={{ margin: '0' }}>
-                        <strong>Version:</strong> {packageJson.version}
-                      </p>
-                      <p style={{ margin: '0' }}>
-                        <strong>Browser:</strong> {navigator.userAgent.substring(0, 60)}...
-                      </p>
-                      <p style={{ margin: '0' }}>
-                        <strong>Timezone:</strong>{' '}
-                        {Intl.DateTimeFormat().resolvedOptions().timeZone}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                <div style={{ marginTop: '1rem' }}>
-                  <Button variant="secondary" size="sm" onClick={() => navigate('/map')}>
-                    View User Map
-                  </Button>
-                </div>
-              </div>
 
               {localStorage.getItem('agreedToViewMature') === 'true' && (
                 <div className={styles.settingItem} style={{ marginTop: '1.5rem' }}>
@@ -390,7 +299,7 @@ const Settings: React.FC = () => {
             onClick={() => selectTab('themes')}
             id="tab-themes-btn"
           >
-            <FaPalette /> <span>Server Theme</span>
+            <FaPalette /> <span>Appearance</span>
           </button>
           <button
             className={`${styles.sidebarItem} ${activeTab === 'local-media' ? styles.active : ''}`}

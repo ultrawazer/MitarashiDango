@@ -22,7 +22,6 @@ const PUBLIC_EXACT_PATHS = new Set([
   '/api/auth/login',
   '/api/auth/google/callback',
   '/api/health',
-  '/api/installation-id',
   '/api/internal/shutdown',
 ])
 

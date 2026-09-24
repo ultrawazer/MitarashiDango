@@ -95,7 +95,6 @@ jobs:
       - name: Build Application
         run: npm run build
         env:
-          VITE_TELEMETRY_URL: ${{ secrets.TELEMETRY_URL }}
           VITE_ANILIST_CLIENT_ID: ${{ secrets.ANILIST_CLIENT_ID }}
           GITHUB_CLIENT_ID: ${{ secrets.G_CLIENT_ID }}
           GOOGLE_AUTH_WORKER_URL: ${{ secrets.GOOGLE_AUTH_WORKER_URL }}

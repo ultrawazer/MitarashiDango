@@ -656,14 +656,34 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
           subtitleSettings={{
             fontSize: state.subtitleFontSize,
             position: state.subtitlePosition,
+            bgOpacity: state.subtitleBgOpacity,
+            bgColor: state.subtitleBgColor,
+            textColor: state.subtitleTextColor,
+            edge: state.subtitleEdge,
+            bold: state.subtitleBold,
           }}
           onSubtitleSettingsChange={(key, value) => {
             if (key === 'fontSize') {
-              actions.setSubtitleFontSize(value)
+              actions.setSubtitleFontSize(value as number)
               localStorage.setItem('subtitleFontSize', value.toString())
-            } else {
-              actions.setSubtitlePosition(value)
+            } else if (key === 'position') {
+              actions.setSubtitlePosition(value as number)
               localStorage.setItem('subtitlePosition', value.toString())
+            } else if (key === 'bgOpacity') {
+              actions.setSubtitleBgOpacity(value as number)
+              localStorage.setItem('subtitleBgOpacity', value.toString())
+            } else if (key === 'bgColor') {
+              actions.setSubtitleBgColor(value as string)
+              localStorage.setItem('subtitleBgColor', value as string)
+            } else if (key === 'textColor') {
+              actions.setSubtitleTextColor(value as string)
+              localStorage.setItem('subtitleTextColor', value as string)
+            } else if (key === 'edge') {
+              actions.setSubtitleEdge(value as any)
+              localStorage.setItem('subtitleEdge', value as string)
+            } else if (key === 'bold') {
+              actions.setSubtitleBold(value as boolean)
+              localStorage.setItem('subtitleBold', value.toString())
             }
           }}
           useNativeControls={state.useNativeControls}

@@ -30,13 +30,15 @@ interface SessionInfo {
   isCurrent?: boolean
 }
 
+type UserSettingsTab = 'profile' | 'watchlist' | 'insights' | 'themes' | 'appearance'
+
 const UserSettings: React.FC = () => {
   const { user, refreshUser } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialTab = searchParams.get('tab') as UserSettingsTab | null
   const [activeTab, setActiveTab] = useState<UserSettingsTab>(
-    initialTab && ['profile', 'watchlist', 'insights', 'themes'].includes(initialTab)
-      ? initialTab
+    initialTab && ['profile', 'watchlist', 'insights', 'themes', 'appearance'].includes(initialTab)
+      ? initialTab === 'appearance' ? 'themes' : initialTab
       : 'profile'
   )
 
@@ -81,8 +83,8 @@ const UserSettings: React.FC = () => {
 
   useEffect(() => {
     const tab = searchParams.get('tab') as UserSettingsTab | null
-    if (tab && ['profile', 'watchlist', 'insights', 'themes'].includes(tab)) {
-      setActiveTab(tab)
+    if (tab && ['profile', 'watchlist', 'insights', 'themes', 'appearance'].includes(tab)) {
+      setActiveTab(tab === 'appearance' ? 'themes' : tab)
     }
   }, [searchParams])
 
@@ -471,7 +473,7 @@ const UserSettings: React.FC = () => {
             onClick={() => selectTab('themes')}
             id="tab-themes-btn"
           >
-            <FaPalette /> <span>Themes</span>
+            <FaPalette /> <span>Appearance</span>
           </button>
           <button
             className={`${styles.sidebarItem} ${activeTab === 'watchlist' ? styles.active : ''}`}

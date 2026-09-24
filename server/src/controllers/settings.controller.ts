@@ -10,7 +10,6 @@ import { CONFIG } from '../config'
 import { DatabaseWrapper } from '../db'
 import { SettingsRepository } from '../repositories/settings.repository'
 import { ShowsMetaRepository } from '../repositories/shows-meta.repository'
-import { getMachineId } from '../utils/machine-id'
 import { animeIdMapper } from '../lib/anime-id-mapper'
 import { shokoClient } from '../lib/shoko.client'
 import { getSystemDb, getGlobalSetting, setGlobalSetting } from '../system-db'
@@ -127,6 +126,8 @@ async function searchByTitleForMal(title: string): Promise<{
 
 const GLOBAL_SETTING_KEYS = new Set([
   'serverTheme',
+  'server_spotlight_style',
+  'server_spotlight_blur',
   'shoko_url',
   'shoko_port',
   'shoko_api_key',
@@ -170,6 +171,10 @@ export class SettingsController {
             value = process.env.FLARESOLVERR_PORT || '8191'
           } else if (key === 'serverTheme') {
             value = 'dango'
+          } else if (key === 'server_spotlight_style') {
+            value = 'modern'
+          } else if (key === 'server_spotlight_blur') {
+            value = '28'
           }
         }
         res.json({ value })
@@ -680,15 +685,6 @@ export class SettingsController {
     }
 
     res.end()
-  }
-
-  getInstallationId = (_req: Request, res: Response) => {
-    try {
-      res.json({ id: getMachineId() })
-    } catch (err) {
-      logger.error({ err }, 'Failed to get machine ID')
-      res.status(500).json({ error: 'Failed to get machine ID' })
-    }
   }
 
   getOfflineDbInfo = (_req: Request, res: Response) => {

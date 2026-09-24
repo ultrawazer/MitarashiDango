@@ -2,6 +2,13 @@ import React, { useState } from 'react'
 import { FaChevronLeft, FaClosedCaptioning, FaCog, FaCheck } from 'react-icons/fa'
 import styles from './PlayerSettings.module.css'
 import type { VideoSource, VideoLink, SubtitleTrack } from '../../types/player'
+import { MenuSlider, SwatchRow, SegmentedRow } from './MenuControls'
+import {
+  type SubtitleStyleSettings,
+  DEFAULT_SUBTITLE_STYLE,
+  TEXT_COLOR_PRESETS,
+  BG_COLOR_PRESETS,
+} from '../../lib/subtitleStyle'
 
 interface PlayerSettingsProps {
   isOpen: boolean
@@ -15,11 +22,11 @@ interface PlayerSettingsProps {
   onSubtitleChange: (trackLabel: string | null) => void
   selectedAudioTrackIndex?: number
   onAudioTrackChange?: (index: number) => void
-  subtitleSettings: {
-    fontSize: number
-    position: number
-  }
-  onSubtitleSettingsChange: (key: 'fontSize' | 'position', value: number) => void
+  subtitleSettings: SubtitleStyleSettings
+  onSubtitleSettingsChange: <K extends keyof SubtitleStyleSettings>(
+    key: K,
+    value: SubtitleStyleSettings[K]
+  ) => void
   useNativeControls: boolean
   onNativeControlsToggle: (value: boolean) => void
   anime4kEnabled?: boolean
@@ -223,38 +230,77 @@ const PlayerSettings = (props: PlayerSettingsProps, ref: React.ForwardedRef<HTML
 
   const renderSubtitleStyle = () => (
     <div className={styles.menuContent}>
-      <div className={styles.sliderGroup}>
-        <label>Font Size ({subtitleSettings.fontSize.toFixed(1)})</label>
-        <input
-          type="range"
-          min="0.5"
-          max="10"
-          step="0.5"
-          value={subtitleSettings.fontSize}
-          onInput={(e) =>
-            onSubtitleSettingsChange('fontSize', parseFloat((e.target as HTMLInputElement).value))
-          }
-          style={
-            {
-              '--slider-percent': `${((subtitleSettings.fontSize - 0.5) / 9.5) * 100}%`,
-            } as React.CSSProperties
-          }
-        />
-      </div>
-      <div className={styles.sliderGroup}>
-        <label>Vertical Position (Lift)</label>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          value={subtitleSettings.position}
-          onInput={(e) =>
-            onSubtitleSettingsChange('position', parseInt((e.target as HTMLInputElement).value))
-          }
-          style={{ '--slider-percent': `${subtitleSettings.position}%` } as React.CSSProperties}
-        />
-      </div>
+      <MenuSlider
+        label="Font Size"
+        display={subtitleSettings.fontSize.toFixed(1)}
+        min={0.5}
+        max={10}
+        step={0.5}
+        value={subtitleSettings.fontSize}
+        percent={((subtitleSettings.fontSize - 0.5) / 9.5) * 100}
+        onChange={(v) => onSubtitleSettingsChange('fontSize', v)}
+      />
+      <MenuSlider
+        label="Vertical Position"
+        display={`${subtitleSettings.position}`}
+        min={0}
+        max={100}
+        step={1}
+        value={subtitleSettings.position}
+        percent={subtitleSettings.position}
+        onChange={(v) => onSubtitleSettingsChange('position', Math.round(v))}
+      />
+      <MenuSlider
+        label="Background Opacity"
+        display={`${Math.round(subtitleSettings.bgOpacity * 100)}%`}
+        min={0}
+        max={1}
+        step={0.05}
+        value={subtitleSettings.bgOpacity}
+        percent={subtitleSettings.bgOpacity * 100}
+        onChange={(v) => onSubtitleSettingsChange('bgOpacity', v)}
+      />
+      <SwatchRow
+        label="Text Color"
+        colors={TEXT_COLOR_PRESETS}
+        value={subtitleSettings.textColor}
+        onChange={(c) => onSubtitleSettingsChange('textColor', c)}
+      />
+      <SwatchRow
+        label="Background Color"
+        colors={BG_COLOR_PRESETS}
+        value={subtitleSettings.bgColor}
+        onChange={(c) => onSubtitleSettingsChange('bgColor', c)}
+      />
+      <SegmentedRow
+        label="Text Edge"
+        options={['shadow', 'outline', 'none'] as const}
+        value={subtitleSettings.edge}
+        onChange={(edge) => onSubtitleSettingsChange('edge', edge)}
+      />
+      <button
+        type="button"
+        className={`${styles.menuItem} ${subtitleSettings.bold ? styles.selected : ''}`}
+        onClick={() => onSubtitleSettingsChange('bold', !subtitleSettings.bold)}
+      >
+        <span>Bold Text</span>
+        {subtitleSettings.bold && <FaCheck size={12} />}
+      </button>
+      <button
+        type="button"
+        className={styles.menuItem}
+        onClick={() => {
+          onSubtitleSettingsChange('fontSize', DEFAULT_SUBTITLE_STYLE.fontSize)
+          onSubtitleSettingsChange('position', DEFAULT_SUBTITLE_STYLE.position)
+          onSubtitleSettingsChange('bgOpacity', DEFAULT_SUBTITLE_STYLE.bgOpacity)
+          onSubtitleSettingsChange('bgColor', DEFAULT_SUBTITLE_STYLE.bgColor)
+          onSubtitleSettingsChange('textColor', DEFAULT_SUBTITLE_STYLE.textColor)
+          onSubtitleSettingsChange('edge', DEFAULT_SUBTITLE_STYLE.edge)
+          onSubtitleSettingsChange('bold', DEFAULT_SUBTITLE_STYLE.bold)
+        }}
+      >
+        <span>Reset to Defaults</span>
+      </button>
     </div>
   )
 

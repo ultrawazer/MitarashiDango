@@ -6,7 +6,18 @@ export const InsightsRepository = {
     dbGet<unknown>(
       db,
       `SELECT
-        (SELECT SUM(currentTime) FROM watched_episodes) as totalSeconds,
+        (SELECT SUM(
+          CASE WHEN we.currentTime > 0 THEN we.currentTime
+               WHEN we.currentTime = 0 AND we.duration = 0 THEN
+                 COALESCE(sm.episodeDuration * 60,
+                   CASE UPPER(COALESCE(sm.type, ''))
+                     WHEN 'MOVIE' THEN 6000
+                     WHEN 'TV_SHORT' THEN 720
+                     WHEN 'MUSIC' THEN 300
+                     ELSE 1440 END)
+               ELSE 0 END)
+         FROM watched_episodes we
+         LEFT JOIN shows_meta sm ON sm.id = we.showId) as totalSeconds,
         (SELECT COUNT(*) FROM watched_episodes) as totalEpisodes,
         (SELECT COUNT(DISTINCT showId) FROM watched_episodes) as totalAnime,
         (SELECT COUNT(*) FROM watchlist WHERE status = 'Completed') as completedCount,
@@ -28,13 +39,37 @@ export const InsightsRepository = {
   getSeasonality: (db: DatabaseWrapper) =>
     dbAll<unknown>(
       db,
-      `SELECT strftime('%m', watchedAt) as month, SUM(currentTime) as seconds FROM watched_episodes GROUP BY month`
+      `SELECT strftime('%m', we.watchedAt) as month, SUM(
+        CASE WHEN we.currentTime > 0 THEN we.currentTime
+             WHEN we.currentTime = 0 AND we.duration = 0 THEN
+               COALESCE(sm.episodeDuration * 60,
+                 CASE UPPER(COALESCE(sm.type, ''))
+                   WHEN 'MOVIE' THEN 6000
+                   WHEN 'TV_SHORT' THEN 720
+                   WHEN 'MUSIC' THEN 300
+                   ELSE 1440 END)
+             ELSE 0 END) as seconds
+       FROM watched_episodes we
+       LEFT JOIN shows_meta sm ON sm.id = we.showId
+       GROUP BY month`
     ),
 
   getAllWatches: (db: DatabaseWrapper) =>
     dbAll<unknown>(
       db,
-      'SELECT watchedAt, currentTime FROM watched_episodes ORDER BY watchedAt ASC'
+      `SELECT we.watchedAt, we.currentTime,
+        CASE WHEN we.currentTime > 0 THEN we.currentTime
+             WHEN we.currentTime = 0 AND we.duration = 0 THEN
+               COALESCE(sm.episodeDuration * 60,
+                 CASE UPPER(COALESCE(sm.type, ''))
+                   WHEN 'MOVIE' THEN 6000
+                   WHEN 'TV_SHORT' THEN 720
+                   WHEN 'MUSIC' THEN 300
+                   ELSE 1440 END)
+             ELSE 0 END as effectiveSeconds
+       FROM watched_episodes we
+       LEFT JOIN shows_meta sm ON sm.id = we.showId
+       ORDER BY we.watchedAt ASC`
     ),
 
   getWatchedShowsMeta: (db: DatabaseWrapper) =>
@@ -72,12 +107,31 @@ export const InsightsRepository = {
       db,
       `SELECT
         (
-          COALESCE((SELECT SUM(currentTime) FROM watched_episodes), 0) +
+          COALESCE((
+            SELECT SUM(
+              CASE WHEN we.currentTime > 0 THEN we.currentTime
+                   WHEN we.currentTime = 0 AND we.duration = 0 THEN
+                     COALESCE(sm.episodeDuration * 60,
+                       CASE UPPER(COALESCE(sm.type, ''))
+                         WHEN 'MOVIE' THEN 6000
+                         WHEN 'TV_SHORT' THEN 720
+                         WHEN 'MUSIC' THEN 300
+                         ELSE 1440 END)
+                   ELSE 0 END)
+            FROM watched_episodes we
+            LEFT JOIN shows_meta sm ON sm.id = we.showId
+          ), 0) +
           COALESCE((
             SELECT SUM(
               CASE 
                 WHEN COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) > COALESCE(we_count.cnt, 0)
-                THEN (COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) - COALESCE(we_count.cnt, 0)) * 24 * 60
+                THEN (COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) - COALESCE(we_count.cnt, 0)) * 
+                     COALESCE(sm.episodeDuration * 60,
+                       CASE UPPER(COALESCE(sm.type, ''))
+                         WHEN 'MOVIE' THEN 6000
+                         WHEN 'TV_SHORT' THEN 720
+                         WHEN 'MUSIC' THEN 300
+                         ELSE 1440 END)
                 ELSE 0
               END
             )
@@ -153,9 +207,9 @@ export const InsightsRepository = {
       FROM shows_meta sm
       WHERE sm.id IN (SELECT showId FROM watched_episodes)
          OR sm.id IN (
-           SELECT id FROM watchlist 
-           WHERE status IN ('Completed', 'Watching') 
-              OR COALESCE(watchedEpisodes, 0) > 0
+            SELECT id FROM watchlist 
+            WHERE status IN ('Completed', 'Watching') 
+               OR COALESCE(watchedEpisodes, 0) > 0
          )`
     ),
 
@@ -194,6 +248,7 @@ export const InsightsRepository = {
       showId: string
       currentTime: number
       duration: number
+      effectiveSeconds: number
       episodeCount: number
       genres: string
       popularityScore: number
@@ -207,6 +262,15 @@ export const InsightsRepository = {
         we.showId,
         we.currentTime,
         we.duration,
+        CASE WHEN we.currentTime > 0 THEN we.currentTime
+             WHEN we.currentTime = 0 AND we.duration = 0 THEN
+               COALESCE(sm.episodeDuration * 60,
+                 CASE UPPER(COALESCE(sm.type, ''))
+                   WHEN 'MOVIE' THEN 6000
+                   WHEN 'TV_SHORT' THEN 720
+                   WHEN 'MUSIC' THEN 300
+                   ELSE 1440 END)
+             ELSE 0 END as effectiveSeconds,
         1 as episodeCount,
         sm.genres,
         sm.popularityScore,
@@ -223,6 +287,7 @@ export const InsightsRepository = {
       showId: string
       currentTime: number
       duration: number
+      effectiveSeconds: number
       episodeCount: number
       genres: string
       popularityScore: number
@@ -236,6 +301,15 @@ export const InsightsRepository = {
         we.showId,
         we.currentTime,
         we.duration,
+        CASE WHEN we.currentTime > 0 THEN we.currentTime
+             WHEN we.currentTime = 0 AND we.duration = 0 THEN
+               COALESCE(sm.episodeDuration * 60,
+                 CASE UPPER(COALESCE(sm.type, ''))
+                   WHEN 'MOVIE' THEN 6000
+                   WHEN 'TV_SHORT' THEN 720
+                   WHEN 'MUSIC' THEN 300
+                   ELSE 1440 END)
+             ELSE 0 END as effectiveSeconds,
         1 as episodeCount,
         sm.genres,
         sm.popularityScore,
@@ -253,10 +327,27 @@ export const InsightsRepository = {
         w.id as showId,
         CASE 
           WHEN COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) > COALESCE(we_count.cnt, 0)
-          THEN (COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) - COALESCE(we_count.cnt, 0)) * 24 * 60
+          THEN (COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) - COALESCE(we_count.cnt, 0)) * 
+               COALESCE(sm.episodeDuration * 60,
+                 CASE UPPER(COALESCE(sm.type, ''))
+                   WHEN 'MOVIE' THEN 6000
+                   WHEN 'TV_SHORT' THEN 720
+                   WHEN 'MUSIC' THEN 300
+                   ELSE 1440 END)
           ELSE 0
         END as currentTime,
         0 as duration,
+        CASE 
+          WHEN COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) > COALESCE(we_count.cnt, 0)
+          THEN (COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) - COALESCE(we_count.cnt, 0)) * 
+               COALESCE(sm.episodeDuration * 60,
+                 CASE UPPER(COALESCE(sm.type, ''))
+                   WHEN 'MOVIE' THEN 6000
+                   WHEN 'TV_SHORT' THEN 720
+                   WHEN 'MUSIC' THEN 300
+                   ELSE 1440 END)
+          ELSE 0
+        END as effectiveSeconds,
         CASE 
           WHEN COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) > COALESCE(we_count.cnt, 0)
           THEN (COALESCE(w.watchedEpisodes, sm.episodeCount, CASE WHEN w.status = 'Completed' THEN 1 ELSE 0 END) - COALESCE(we_count.cnt, 0))

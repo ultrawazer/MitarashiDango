@@ -4,7 +4,6 @@ import { Toaster } from 'react-hot-toast'
 import Header from './components/layout/Header'
 import Sidebar from './components/layout/Sidebar'
 import Footer from './components/layout/Footer'
-import { useTelemetry } from './hooks/useTelemetry'
 import { useAnilistAuthCallback } from './hooks/useAnilistAuthCallback'
 import VirtualKeyboard from './components/common/VirtualKeyboard'
 import { useVirtualKeyboard } from './hooks/useVirtualKeyboard'
@@ -27,7 +26,6 @@ const Radio = lazy(() => import('./pages/Radio'))
 const Tv = lazy(() => import('./pages/Tv'))
 const Trackers = lazy(() => import('./pages/Trackers'))
 const Insights = lazy(() => import('./pages/Insights'))
-const UserMap = lazy(() => import('./pages/Map'))
 const AnimeInfoPage = lazy(() => import('./pages/AnimeInfoPage'))
 
 const PlayerRedirect = () => {
@@ -40,7 +38,6 @@ function App() {
   const { isAuthenticated, isSetup, isLoading } = useAuth()
   const location = useLocation()
   const virtualKeyboard = useVirtualKeyboard()
-  useTelemetry()
   useAnilistAuthCallback()
 
   useEffect(() => {
@@ -147,7 +144,6 @@ function App() {
               <Route path="/trackers" element={<Trackers />} />
               <Route path="/mal" element={<Navigate to="/trackers" replace />} />
               <Route path="/insights" element={<Insights />} />
-              <Route path="/map" element={<UserMap />} />
               <Route path="/anime/:id" element={<AnimeInfoPage />} />
               <Route path="/watch/:id" element={<Player />} />
               <Route path="/watch/:id/:episodeNumber" element={<Player />} />

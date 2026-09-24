@@ -119,6 +119,7 @@ export async function syncAniList(db: DatabaseWrapper): Promise<SyncSummary> {
     englishName?: string
     episodeCount?: number
     anilistId?: number
+    episodeDuration?: number
   }[] = []
   const watchedInserts: { showId: string; from: number; to: number }[] = []
   const stateUpdates: Record<string, SyncStateEntry | undefined> = {}
@@ -186,6 +187,7 @@ export async function syncAniList(db: DatabaseWrapper): Promise<SyncSummary> {
           englishName: remote.title.english,
           episodeCount: remote.totalEpisodes,
           anilistId: mediaId,
+          episodeDuration: remote.episodeDuration,
         })
         if (remote.progress > 0) {
           watchedInserts.push({ showId, from: 1, to: remote.progress })

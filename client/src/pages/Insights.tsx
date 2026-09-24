@@ -9,6 +9,7 @@ import {
   FaHistory,
   FaExclamationTriangle,
   FaBookmark,
+  FaTv,
 } from 'react-icons/fa'
 import { useGenreCards, type GenreCard, type TopShow } from '../hooks/useAnimeData'
 import { fixThumbnailUrl } from '../lib/utils'
@@ -229,6 +230,19 @@ const Insights: React.FC = () => {
           <div className={styles.statInfo}>
             <span className={styles.statValue}>{data.totalEpisodes}</span>
             <span className={styles.statLabel}>Episodes Watched</span>
+          </div>
+        </div>
+
+        <div className={styles.statCard}>
+          <div
+            className={styles.statIcon}
+            style={{ background: 'rgba(45, 212, 191, 0.2)', color: '#2dd4bf' }}
+          >
+            <FaTv />
+          </div>
+          <div className={styles.statInfo}>
+            <span className={styles.statValue}>{data.completedAnime}</span>
+            <span className={styles.statLabel}>Completed Shows</span>
           </div>
         </div>
 

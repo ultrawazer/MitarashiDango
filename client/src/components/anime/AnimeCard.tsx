@@ -17,6 +17,7 @@ import { useTitlePreference } from '../../contexts/TitlePreferenceContext'
 import styles from './AnimeCard.module.css'
 import useIsMobile from '../../hooks/useIsMobile'
 import { useLowEndMode } from '../../contexts/LowEndModeContext'
+import { useEnrichedThumbnail } from '../../hooks/useEnrichedThumbnail'
 
 interface Anime {
   _id: string
@@ -109,6 +110,7 @@ const AnimeCard: React.FC<AnimeCardProps> = memo(
     const { lowEndMode } = useLowEndMode()
     const [isLoaded, setIsLoaded] = useState(false)
     const [isHovered, setIsHovered] = useState(false)
+    const { thumbnail: healedThumbnail } = useEnrichedThumbnail(anime._id || anime.id, anime.thumbnail)
     const [isPopupVisible, setIsPopupVisible] = useState(false)
     const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
     const timeoutRef = React.useRef<NodeJS.Timeout | null>(null)
@@ -393,7 +395,7 @@ const AnimeCard: React.FC<AnimeCardProps> = memo(
               <div className={`${styles.matureOverlay} ${lowEndMode ? styles.flat : ''}`} />
             )}
             <img
-              src={fixThumbnailUrl(anime.thumbnail, lowEndMode ? 100 : 150, lowEndMode ? 150 : 200)}
+              src={fixThumbnailUrl(healedThumbnail || anime.thumbnail, lowEndMode ? 100 : 150, lowEndMode ? 150 : 200)}
               alt={displayTitle}
               className={`${styles.posterImg} ${isLoaded ? styles.loaded : ''} ${
                 shouldBlur && !lowEndMode ? styles.blurred : ''

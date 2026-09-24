@@ -15,7 +15,6 @@ export function createSettingsRouter(
   router.get('/settings', controller.getSettings)
   router.post('/settings', controller.updateSettings)
   router.get('/backup-db', controller.backupDatabase)
-  router.get('/installation-id', controller.getInstallationId)
   router.get('/settings/offline-db', controller.getOfflineDbInfo)
   router.post('/settings/offline-db/update', controller.updateOfflineDb)
   router.post('/settings/offline-db/auto-update', controller.setAutoUpdateOfflineDb)
