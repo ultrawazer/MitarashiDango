@@ -18,6 +18,13 @@ import {
   useRemoveFromWatchlist,
 } from '../hooks/useAnimeData'
 import { useTitlePreference } from '../contexts/TitlePreferenceContext'
+import {
+  useRecommendations,
+  useLocalLibraryRecommendations,
+  useRefreshRecommendations,
+  useDismissRecommendation,
+} from '../hooks/useRecommendations'
+import { RecommendationSection } from '../components/anime/RecommendationSection'
 import styles from './Home.module.css'
 
 type ActiveTab = 'latest' | 'season' | 'popular' | 'week'
@@ -55,9 +62,14 @@ interface LocalHomeProps {
   mediaMode: 'local' | 'mixed'
 }
 
-const LocalHome: React.FC<LocalHomeProps> = ({ mediaMode: _mediaMode }) => {
+const LocalHome: React.FC<LocalHomeProps> = ({ mediaMode }) => {
   const queryClient = useQueryClient()
   const { titlePreference } = useTitlePreference()
+
+  const { data: localRecs = [], isLoading: loadingLocalRecs } = useLocalLibraryRecommendations()
+  const { data: onlineRecs = [], isLoading: loadingOnlineRecs } = useRecommendations()
+  const refreshRecommendationsMutation = useRefreshRecommendations()
+  const dismissRecommendationMutation = useDismissRecommendation()
   const seasonalRef = useRef<HTMLDivElement>(null)
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
@@ -496,6 +508,30 @@ const LocalHome: React.FC<LocalHomeProps> = ({ mediaMode: _mediaMode }) => {
           </div>
         }
       />
+
+      {/* ── Local Library Recommendations ── */}
+      <RecommendationSection
+        title="From Your Library Backlog"
+        subtitle="Unwatched series found in your local collection"
+        badge="Local Media"
+        items={localRecs}
+        loading={loadingLocalRecs}
+        onRefresh={() => refreshRecommendationsMutation.mutate()}
+        onDismiss={(showId) => dismissRecommendationMutation.mutate(showId)}
+      />
+
+      {/* ── Mixed Mode: Online Recommendations ── */}
+      {mediaMode === 'mixed' && (
+        <RecommendationSection
+          title="Recommended For You"
+          subtitle="Curated from your watch history and ratings"
+          badge="5D Match"
+          items={onlineRecs}
+          loading={loadingOnlineRecs}
+          onRefresh={() => refreshRecommendationsMutation.mutate()}
+          onDismiss={(showId) => dismissRecommendationMutation.mutate(showId)}
+        />
+      )}
 
       {/* ── Tab Selector ── */}
       <div className={styles.tabBar}>

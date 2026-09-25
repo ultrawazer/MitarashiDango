@@ -1,0 +1,135 @@
+.section {
+  margin-bottom: 2.5rem;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 1.25rem;
+  gap: 1rem;
+}
+
+.titleArea {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text-primary, #fff);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: hsla(var(--accent-h, 265), 95%, 72%, 0.15);
+  color: var(--accent-light, #c084fc);
+  border: 1px solid hsla(var(--accent-h, 265), 95%, 72%, 0.3);
+}
+
+.subtitle {
+  font-size: 0.85rem;
+  color: var(--text-tertiary, #8f8f98);
+  margin: 0;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.refreshButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-secondary, #0f0f11);
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-secondary, #b4b4bd);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.refreshButton:hover {
+  background: var(--bg-elevated, #27272a);
+  color: var(--text-primary, #fff);
+  border-color: var(--border-secondary, rgba(255, 255, 255, 0.15));
+}
+
+.navButton {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-secondary, #0f0f11);
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.08));
+  color: var(--text-secondary, #b4b4bd);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.navButton:hover {
+  background: var(--bg-elevated, #27272a);
+  color: var(--text-primary, #fff);
+}
+
+.carousel {
+  overflow: hidden;
+  margin: 0 -0.5rem;
+  padding: 0 0.5rem;
+}
+
+.track {
+  display: flex;
+  gap: 1rem;
+}
+
+.slide {
+  flex: 0 0 calc((100% - 4rem) / 5);
+  min-width: 170px;
+  max-width: 220px;
+}
+
+@media (max-width: 1200px) {
+  .slide {
+    flex: 0 0 calc((100% - 3rem) / 4);
+  }
+}
+
+@media (max-width: 900px) {
+  .slide {
+    flex: 0 0 calc((100% - 2rem) / 3);
+  }
+}
+
+@media (max-width: 600px) {
+  .slide {
+    flex: 0 0 calc((100% - 1rem) / 2);
+    min-width: 140px;
+  }
+}
+
+.skeletonCard {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-secondary, #0f0f11);
+}

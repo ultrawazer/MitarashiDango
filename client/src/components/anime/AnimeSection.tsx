@@ -184,7 +184,10 @@ const AnimeSection: React.FC<AnimeSectionProps> = ({
                         </div>
                       ))
                     : animeList.map((anime, index) => (
-                        <div key={anime._id} className={styles['carousel-card']}>
+                        <div
+                          key={`${anime._id}-${anime.episodeNumber ?? index}-${index}`}
+                          className={styles['carousel-card']}
+                        >
                           <AnimeCard
                             anime={anime}
                             continueWatching={continueWatching}
@@ -211,7 +214,7 @@ const AnimeSection: React.FC<AnimeSectionProps> = ({
             ) : animeList.length > 0 ? (
               animeList.map((anime, index) => (
                 <AnimeCard
-                  key={anime._id}
+                  key={`${anime._id}-${anime.episodeNumber ?? index}-${index}`}
                   anime={anime}
                   continueWatching={continueWatching}
                   onRemove={onRemove}

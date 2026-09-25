@@ -1,0 +1,172 @@
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-primary, #17171a);
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.08));
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.2s ease;
+  width: 100%;
+  text-decoration: none;
+  color: inherit;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-accent, hsla(var(--accent-h, 265), 95%, 72%, 0.3));
+  box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.5), 0 0 20px -4px var(--accent-glow, rgba(168, 85, 247, 0.3));
+}
+
+.posterWrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: var(--bg-secondary, #0f0f11);
+  overflow: hidden;
+}
+
+.posterImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.card:hover .posterImage {
+  transform: scale(1.04);
+}
+
+.matchBadge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+
+.highMatch {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.9), rgba(5, 150, 105, 0.9));
+  color: #ffffff;
+}
+
+.mediumMatch {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.9));
+  color: #ffffff;
+}
+
+.lowMatch {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.9), rgba(126, 34, 206, 0.9));
+  color: #ffffff;
+}
+
+.localBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #10b981;
+  backdrop-filter: blur(8px);
+  z-index: 2;
+}
+
+.cardActions {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 3;
+}
+
+.card:hover .cardActions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.actionButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-primary, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.actionButton:hover {
+  background: var(--accent, #a855f7);
+  border-color: transparent;
+  transform: scale(1.1);
+}
+
+.dismissButton:hover {
+  background: var(--color-danger, #ef4444);
+}
+
+.infoArea {
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.reasonText {
+  font-size: 0.74rem;
+  color: var(--text-tertiary, #8f8f98);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.genresList {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.genrePill {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary, #b4b4bd);
+}

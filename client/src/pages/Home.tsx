@@ -25,6 +25,12 @@ import {
 } from '../hooks/useAnimeData'
 import { useTitlePreference } from '../contexts/TitlePreferenceContext'
 import { useSetting } from '../hooks/useSettings'
+import {
+  useRecommendations,
+  useRefreshRecommendations,
+  useDismissRecommendation,
+} from '../hooks/useRecommendations'
+import { RecommendationSection } from '../components/anime/RecommendationSection'
 import LocalHome from './LocalHome'
 import styles from './Home.module.css'
 
@@ -58,6 +64,10 @@ const Home: React.FC = () => {
   const removeQueue = useRemoveFromQueue()
   const clearQueue = useClearQueue()
   const reorderQueue = useReorderQueue()
+
+  const { data: recommendations = [], isLoading: loadingRecommendations } = useRecommendations()
+  const refreshRecommendationsMutation = useRefreshRecommendations()
+  const dismissRecommendationMutation = useDismissRecommendation()
 
   useEffect(() => {
     document.title = 'Home - dango'
@@ -347,6 +357,17 @@ const Home: React.FC = () => {
             </Button>
           </div>
         }
+      />
+
+      {/* ── Recommendations ── */}
+      <RecommendationSection
+        title="Recommended For You"
+        subtitle="Curated from your watch history and ratings"
+        badge="5D Match"
+        items={recommendations}
+        loading={loadingRecommendations}
+        onRefresh={() => refreshRecommendationsMutation.mutate()}
+        onDismiss={(showId) => dismissRecommendationMutation.mutate(showId)}
       />
 
       {/* ── Tab Selector ── */}

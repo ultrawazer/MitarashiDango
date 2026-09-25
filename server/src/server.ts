@@ -46,6 +46,7 @@ import { createInsightsRouter } from './routes/insights.routes'
 import { createTranslateRouter } from './routes/translate.routes'
 import { createTrackerRouter } from './routes/tracker.routes'
 import { createFlareSolverrRouter } from './routes/flaresolverr.routes'
+import { createRecommendationsRouter } from './routes/recommendations.routes'
 import { flareSolverrService } from './services/flaresolverr.service'
 import { SettingsRepository } from './repositories/settings.repository'
 import { requestContext } from './utils/request-context'
@@ -190,6 +191,7 @@ app.use('/api', createTranslateRouter())
 app.use('/api', createTrackerRouter())
 app.use('/api', createLocalMediaRouter())
 app.use('/api', createFlareSolverrRouter())
+app.use('/api', createRecommendationsRouter())
 app.use(
   '/api',
   createSettingsRouter(

@@ -23,6 +23,7 @@ const SYNC_TABLES = [
   'sync_metadata',
   'dismissed_notifications',
   'discovered_notifications',
+  'dismissed_recommendations',
 ] as const
 
 type SyncRow = Record<string, string | number | null>
@@ -494,6 +495,40 @@ export async function initializeDatabase(dbPath: string): Promise<DatabaseWrappe
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_temp_show_ids_provider_native ON temp_show_ids(provider, nativeId)`
     )
 
+    db.run(
+      `CREATE TABLE IF NOT EXISTS recommendations_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        showId TEXT NOT NULL,
+        score REAL NOT NULL,
+        breakdown TEXT,
+        reason TEXT,
+        isLocal INTEGER DEFAULT 0,
+        mediaType TEXT,
+        sourceType TEXT NOT NULL,
+        computedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(showId, sourceType)
+      )`
+    )
+    db.run(
+      `CREATE TABLE IF NOT EXISTS dismissed_recommendations (
+        showId TEXT PRIMARY KEY,
+        dismissedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`
+    )
+    db.run(
+      `CREATE TABLE IF NOT EXISTS user_taste_profile (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`
+    )
+    db.run(
+      `CREATE INDEX IF NOT EXISTS idx_recommendations_cache_source ON recommendations_cache(sourceType, score DESC)`
+    )
+    db.run(
+      `CREATE INDEX IF NOT EXISTS idx_recommendations_cache_showId ON recommendations_cache(showId)`
+    )
+
     try {
       const purged = TempShowIdsRepository.purge(db)
       if (purged > 0) logger.info({ purged }, 'Purged stale temp show ids on boot')
@@ -551,6 +586,9 @@ export async function initializeDatabase(dbPath: string): Promise<DatabaseWrappe
     addCol('shows_meta', 'anilistId', 'INTEGER')
     addCol('shows_meta', 'isAdult', 'INTEGER')
     addCol('shows_meta', 'episodeDuration', 'INTEGER')
+    addCol('shows_meta', 'tags', 'TEXT')
+    addCol('shows_meta', 'studios', 'TEXT')
+    addCol('shows_meta', 'description', 'TEXT')
 
     await db.saveNow()
     return db
