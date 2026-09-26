@@ -140,7 +140,7 @@ export const RecommendationService = {
           name: item.name,
           thumbnail: item.thumbnail,
           englishName: item.englishName,
-          genres: item.genres ? JSON.stringify(item.genres) : undefined,
+          genres: item.genres && item.genres.length > 0 ? JSON.stringify(item.genres) : undefined,
           type: item.type,
           status: item.status,
           episodeCount: item.episodeCount,

@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router'
-import { FaGithub, FaHeart, FaChevronUp, FaDiscord } from 'react-icons/fa'
+import { FaGithub, FaChevronUp, FaDiscord } from 'react-icons/fa'
 import Logo from '../common/Logo'
 import styles from './Footer.module.css'
 import packageJson from '../../../package.json'
@@ -79,10 +79,9 @@ const Footer: React.FC = () => {
 
       <div className={styles.bottomBar}>
         <p className={styles.copyright}>
-          © {currentYear} <span className={styles.brand}>dango</span> • Crafted with{' '}
-          <FaHeart className={styles.heartIcon} /> by{' '}
-          <a href="https://github.com/serifpersia" target="_blank" rel="noopener noreferrer">
-            serifpersia
+          © {currentYear} <span className={styles.brand}>Mitarashi Dango</span> •{' '}
+          <a href="https://github.com/ultrawazer" target="_blank" rel="noopener noreferrer">
+            Ultrawazer
           </a>
         </p>
         <button className={styles.backToTop} onClick={scrollToTop} aria-label="Back to top">

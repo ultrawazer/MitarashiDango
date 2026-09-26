@@ -516,8 +516,10 @@ const LocalHome: React.FC<LocalHomeProps> = ({ mediaMode }) => {
         badge="Local Media"
         items={localRecs}
         loading={loadingLocalRecs}
+        isRefreshing={refreshRecommendationsMutation.isPending}
         onRefresh={() => refreshRecommendationsMutation.mutate()}
         onDismiss={(showId) => dismissRecommendationMutation.mutate(showId)}
+        collapsible
       />
 
       {/* ── Mixed Mode: Online Recommendations ── */}
@@ -528,10 +530,13 @@ const LocalHome: React.FC<LocalHomeProps> = ({ mediaMode }) => {
           badge="5D Match"
           items={onlineRecs}
           loading={loadingOnlineRecs}
+          isRefreshing={refreshRecommendationsMutation.isPending}
           onRefresh={() => refreshRecommendationsMutation.mutate()}
           onDismiss={(showId) => dismissRecommendationMutation.mutate(showId)}
+          collapsible
         />
       )}
+
 
       {/* ── Tab Selector ── */}
       <div className={styles.tabBar}>

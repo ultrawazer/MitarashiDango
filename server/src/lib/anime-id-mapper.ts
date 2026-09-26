@@ -51,11 +51,14 @@ export class AnimeIdMapper {
   private anilistToAnidb = new Map<number, number>()
   private malToEntry = new Map<number, AnimeEntryMapping>()
   private anilistToMal = new Map<number, number>()
+  private anilistToEntry = new Map<number, AnimeEntryMapping>()
+  private db?: DatabaseWrapper
   private isInitialized = false
   private isRefreshing = false
 
   public async init(db: DatabaseWrapper): Promise<void> {
     try {
+      this.db = db
       this.ensureTable(db)
       this.loadCache(db)
 
@@ -191,23 +194,27 @@ export class AnimeIdMapper {
       this.anilistToAnidb.clear()
       this.malToEntry.clear()
       this.anilistToMal.clear()
+      this.anilistToEntry.clear()
 
       for (const row of rows) {
         if (row.anilist_id) {
+          const entry: AnimeEntryMapping = {
+            anilistId: row.anilist_id,
+            anidbId: row.anidb_id || undefined,
+            malId: row.mal_id || undefined,
+            title: row.title || '',
+            thumbnail: row.thumbnail || undefined,
+            type: row.type || undefined,
+            genres: row.genres || undefined,
+          }
+          this.anilistToEntry.set(row.anilist_id, entry)
+
           if (row.anidb_id) {
             this.anidbToAnilist.set(row.anidb_id, row.anilist_id)
             this.anilistToAnidb.set(row.anilist_id, row.anidb_id)
           }
           if (row.mal_id) {
-            this.malToEntry.set(row.mal_id, {
-              anilistId: row.anilist_id,
-              anidbId: row.anidb_id || undefined,
-              malId: row.mal_id,
-              title: row.title || '',
-              thumbnail: row.thumbnail || undefined,
-              type: row.type || undefined,
-              genres: row.genres || undefined,
-            })
+            this.malToEntry.set(row.mal_id, entry)
             this.anilistToMal.set(row.anilist_id, row.mal_id)
           }
         }
@@ -235,6 +242,81 @@ export class AnimeIdMapper {
 
   public getMalIdByAnilist(anilistId: number): number | null {
     return this.anilistToMal.get(anilistId) ?? null
+  }
+
+  public getByAnilistId(anilistId: number): AnimeEntryMapping | null {
+    const cached = this.anilistToEntry.get(anilistId)
+    if (cached) return cached
+    if (this.db) {
+      try {
+        const row = this.db.get<{
+          anidb_id: number | null
+          anilist_id: number | null
+          mal_id: number | null
+          title: string | null
+          thumbnail: string | null
+          type: string | null
+          genres: string | null
+        }>(
+          'SELECT anidb_id, anilist_id, mal_id, title, thumbnail, type, genres FROM anime_id_map WHERE anilist_id = ? LIMIT 1',
+          [anilistId]
+        )
+        if (row && row.anilist_id) {
+          const entry: AnimeEntryMapping = {
+            anilistId: row.anilist_id,
+            anidbId: row.anidb_id || undefined,
+            malId: row.mal_id || undefined,
+            title: row.title || '',
+            thumbnail: row.thumbnail || undefined,
+            type: row.type || undefined,
+            genres: row.genres || undefined,
+          }
+          this.anilistToEntry.set(row.anilist_id, entry)
+          return entry
+        }
+      } catch (err) {
+        log.warn({ err, anilistId }, 'Failed querying anime_id_map for anilistId')
+      }
+    }
+    return null
+  }
+
+  public getByAnidbId(anidbId: number): AnimeEntryMapping | null {
+    const anilistId = this.anidbToAnilist.get(anidbId)
+    if (anilistId) {
+      const entry = this.getByAnilistId(anilistId)
+      if (entry) return entry
+    }
+    if (this.db) {
+      try {
+        const row = this.db.get<{
+          anidb_id: number | null
+          anilist_id: number | null
+          mal_id: number | null
+          title: string | null
+          thumbnail: string | null
+          type: string | null
+          genres: string | null
+        }>(
+          'SELECT anidb_id, anilist_id, mal_id, title, thumbnail, type, genres FROM anime_id_map WHERE anidb_id = ? LIMIT 1',
+          [anidbId]
+        )
+        if (row) {
+          return {
+            anilistId: row.anilist_id || 0,
+            anidbId: row.anidb_id || undefined,
+            malId: row.mal_id || undefined,
+            title: row.title || '',
+            thumbnail: row.thumbnail || undefined,
+            type: row.type || undefined,
+            genres: row.genres || undefined,
+          }
+        }
+      } catch (err) {
+        log.warn({ err, anidbId }, 'Failed querying anime_id_map for anidbId')
+      }
+    }
+    return null
   }
 
   public getMappingCount(): {

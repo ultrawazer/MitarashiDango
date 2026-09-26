@@ -366,8 +366,10 @@ const Home: React.FC = () => {
         badge="5D Match"
         items={recommendations}
         loading={loadingRecommendations}
+        isRefreshing={refreshRecommendationsMutation.isPending}
         onRefresh={() => refreshRecommendationsMutation.mutate()}
         onDismiss={(showId) => dismissRecommendationMutation.mutate(showId)}
+        collapsible
       />
 
       {/* ── Tab Selector ── */}

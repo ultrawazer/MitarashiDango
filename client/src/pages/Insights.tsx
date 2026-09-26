@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   FaClock,
@@ -10,6 +10,8 @@ import {
   FaExclamationTriangle,
   FaBookmark,
   FaTv,
+  FaChevronDown,
+  FaChevronUp,
 } from 'react-icons/fa'
 import { useGenreCards, type GenreCard, type TopShow } from '../hooks/useAnimeData'
 import { fixThumbnailUrl } from '../lib/utils'
@@ -90,6 +92,67 @@ const Insights: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null)
+
+  const gridRef = useRef<HTMLDivElement>(null)
+  const firstCardRef = useRef<HTMLDivElement>(null)
+  const [rowHeight, setRowHeight] = useState<number>(240)
+  const [totalHeight, setTotalHeight] = useState<number | undefined>(undefined)
+  const [hasMultipleRows, setHasMultipleRows] = useState(false)
+
+  const GENRES_EXPANDED_KEY = 'insights_genres_expanded'
+  const [isGenresExpanded, setIsGenresExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem(GENRES_EXPANDED_KEY)
+    return saved !== null ? saved === 'true' : false
+  })
+
+  const toggleGenresExpanded = () => {
+    setIsGenresExpanded((prev) => {
+      const next = !prev
+      localStorage.setItem(GENRES_EXPANDED_KEY, String(next))
+      if (!next && gridRef.current) {
+        const rect = gridRef.current.getBoundingClientRect()
+        if (rect.top < 80) {
+          gridRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }
+      }
+      return next
+    })
+  }
+
+  useEffect(() => {
+    const gridEl = gridRef.current
+    if (!gridEl) return
+
+    const updateDimensions = () => {
+      if (firstCardRef.current) {
+        const cardH = firstCardRef.current.offsetHeight
+        if (cardH > 0) {
+          setRowHeight(cardH)
+        }
+      }
+      const scrollH = gridEl.scrollHeight
+      if (scrollH > 0) {
+        setTotalHeight(scrollH)
+      }
+      if (firstCardRef.current) {
+        const cardH = firstCardRef.current.offsetHeight
+        setHasMultipleRows(scrollH > cardH + 30)
+      }
+    }
+
+    updateDimensions()
+
+    const observer = new ResizeObserver(() => {
+      updateDimensions()
+    })
+    observer.observe(gridEl)
+    window.addEventListener('resize', updateDimensions)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateDimensions)
+    }
+  }, [genreCardsData, isLoadingGenreCards])
 
   const availableYears = useMemo(() => {
     if (!data?.activityGrid) return [new Date().getFullYear()]
@@ -471,69 +534,115 @@ const Insights: React.FC = () => {
         </div>
       </div>
 
-      <div className={styles.genreGrid}>
-        {isLoadingGenreCards
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className={styles.genreCardSkeleton}>
-                <div className={styles.skeletonRank} />
-                <div className={styles.skeletonTitle} />
-                <div className={styles.skeletonStats} />
-                <div className={styles.skeletonPosters} />
-              </div>
-            ))
-          : genreCardsData?.map((card: GenreCard) => (
-              <div
-                key={card.name}
-                className={styles.genreCard}
-                onClick={() => setSelectedGenre(card.name)}
-                title={`Explore ${card.name} anime`}
-              >
-                <div className={styles.rankBadge}>
-                  <span className={styles.rankNumber}>{card.rank}</span>
-                </div>
-                <h3 className={styles.genreTitle}>{card.name}</h3>
-                <div className={styles.genreStats}>
-                  <span>
-                    {card.titleCount ?? card.count} titles • {card.episodeCount ?? card.count} eps
-                  </span>
-                  <span>{card.meanScore.toFixed(1)} avg score</span>
-                  <span>{card.timeWatched}</span>
-                </div>
-                <div className={styles.posterRow}>
-                  {card.topShows.map((show: TopShow, showIdx: number) => {
-                    const isFourth = showIdx === 3
-                    const totalTitles = card.titleCount ?? card.count
-                    const extraCount = totalTitles - 3
+      <div className={styles.genreSection}>
+        <div className={styles.genreSectionHeader}>
+          <div className={styles.genreTitleWrapper}>
+            <h2 className="section-title" style={{ margin: 0 }}>Watchlist Genres</h2>
+            {genreCardsData && genreCardsData.length > 0 && (
+              <span className={styles.genreCountBadge}>
+                {genreCardsData.length} Genres
+              </span>
+            )}
+          </div>
+        </div>
 
-                    if (isFourth && extraCount > 1) {
-                      return (
-                        <div key={show.id} className={styles.miniPosterContainer}>
+        <div
+          className={styles.genreContainer}
+          style={{
+            maxHeight: isGenresExpanded
+              ? totalHeight
+                ? `${totalHeight + 30}px`
+                : '5000px'
+              : rowHeight
+                ? `${rowHeight + 12}px`
+                : '270px',
+          }}
+        >
+          <div ref={gridRef} className={styles.genreGrid}>
+            {isLoadingGenreCards
+              ? Array.from({ length: 4 }).map((_, i) => (
+                  <div
+                    key={i}
+                    ref={i === 0 ? firstCardRef : undefined}
+                    className={styles.genreCardSkeleton}
+                  >
+                    <div className={styles.skeletonRank} />
+                    <div className={styles.skeletonTitle} />
+                    <div className={styles.skeletonStats} />
+                    <div className={styles.skeletonPosters} />
+                  </div>
+                ))
+              : genreCardsData?.map((card: GenreCard, index: number) => (
+                  <div
+                    key={card.name}
+                    ref={index === 0 ? firstCardRef : undefined}
+                    className={styles.genreCard}
+                    onClick={() => setSelectedGenre(card.name)}
+                    title={`Explore ${card.name} anime`}
+                  >
+                    <div className={styles.rankBadge}>
+                      <span className={styles.rankNumber}>{card.rank}</span>
+                    </div>
+                    <h3 className={styles.genreTitle}>{card.name}</h3>
+                    <div className={styles.genreStats}>
+                      <span>
+                        {card.titleCount ?? card.count} titles • {card.episodeCount ?? card.count} eps
+                      </span>
+                      <span>{card.meanScore.toFixed(1)} avg score</span>
+                      <span>{card.timeWatched}</span>
+                    </div>
+                    <div className={styles.posterRow}>
+                      {card.topShows.map((show: TopShow, showIdx: number) => {
+                        const isFourth = showIdx === 3
+                        const totalTitles = card.titleCount ?? card.count
+                        const extraCount = totalTitles - 3
+
+                        if (isFourth && extraCount > 1) {
+                          return (
+                            <div key={show.id} className={styles.miniPosterContainer}>
+                              <img
+                                src={fixThumbnailUrl(show.thumbnail)}
+                                alt={getShowTitle(show)}
+                                className={styles.miniPoster}
+                                title={getShowTitle(show)}
+                              />
+                              <div className={styles.miniPosterOverlay}>
+                                <span>+{extraCount}</span>
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        return (
                           <img
+                            key={show.id}
                             src={fixThumbnailUrl(show.thumbnail)}
                             alt={getShowTitle(show)}
                             className={styles.miniPoster}
                             title={getShowTitle(show)}
                           />
-                          <div className={styles.miniPosterOverlay}>
-                            <span>+{extraCount}</span>
-                          </div>
-                        </div>
-                      )
-                    }
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+          </div>
+        </div>
 
-                    return (
-                      <img
-                        key={show.id}
-                        src={fixThumbnailUrl(show.thumbnail)}
-                        alt={getShowTitle(show)}
-                        className={styles.miniPoster}
-                        title={getShowTitle(show)}
-                      />
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
+        {hasMultipleRows && (
+          <div className={styles.genreExpandBar}>
+            <button
+              type="button"
+              className={styles.expandBarButton}
+              onClick={toggleGenresExpanded}
+              aria-expanded={isGenresExpanded}
+              aria-label={isGenresExpanded ? 'Collapse genres' : 'Expand genres'}
+            >
+              <span>{isGenresExpanded ? 'Show less' : `Show all ${genreCardsData?.length || ''} genres`}</span>
+              {isGenresExpanded ? <FaChevronUp size={11} /> : <FaChevronDown size={11} />}
+            </button>
+          </div>
+        )}
       </div>
 
       {data.droppedShows?.length > 0 && (

@@ -626,11 +626,108 @@
   }
 }
 
+.genreSection {
+  margin-bottom: var(--space-10);
+}
+
+.genreSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-6);
+  gap: var(--space-4);
+}
+
+.genreTitleWrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.genreCountBadge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-full);
+  background: rgba(138, 79, 255, 0.15);
+  color: var(--accent-light);
+  border: 1px solid rgba(138, 79, 255, 0.3);
+}
+
+.genreContainer {
+  position: relative;
+  overflow: hidden;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  margin-top: -6px;
+  margin-bottom: -6px;
+  padding-left: 4px;
+  padding-right: 4px;
+  transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: max-height;
+}
+
 .genreGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 1.5rem;
-  margin-bottom: var(--space-10);
+  margin-bottom: 0;
+}
+
+.genreExpandBar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  margin-top: 2rem;
+}
+
+.genreExpandBar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--border-primary) 25%,
+    var(--border-primary) 75%,
+    transparent 100%
+  );
+  z-index: 0;
+}
+
+.expandBarButton {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.6rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: all var(--transition-base, 0.2s ease);
+}
+
+.expandBarButton:hover {
+  background: var(--bg-elevated);
+  border-color: rgba(138, 79, 255, 0.5);
+  color: var(--text-primary);
+  box-shadow: 0 4px 20px rgba(138, 79, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.expandBarButton:active {
+  transform: scale(0.97);
 }
 
 .genreCard {

@@ -6,26 +6,27 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 1.25rem;
-  gap: 1rem;
+  margin-bottom: var(--space-8, 1.25rem);
+  gap: var(--space-4, 1rem);
 }
 
 .titleArea {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  flex: 1;
 }
 
 .titleRow {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-6, 1rem);
 }
 
 .title {
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   font-weight: 800;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.01em;
 }
@@ -42,94 +43,162 @@
 
 .subtitle {
   font-size: 0.85rem;
-  color: var(--text-tertiary, #8f8f98);
+  color: var(--text-tertiary);
   margin: 0;
 }
 
-.controls {
+/* Nav arrows pill container - matching AnimeSection */
+.navArrows {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.refreshButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--bg-secondary, #0f0f11);
-  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.08));
-  border-radius: var(--radius-md, 8px);
-  color: var(--text-secondary, #b4b4bd);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.refreshButton:hover {
-  background: var(--bg-elevated, #27272a);
-  color: var(--text-primary, #fff);
-  border-color: var(--border-secondary, rgba(255, 255, 255, 0.15));
+  gap: 8px;
+  background: var(--bg-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
 }
 
 .navButton {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-secondary, #0f0f11);
-  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.08));
-  color: var(--text-secondary, #b4b4bd);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-base, 0.15s ease);
+}
+
+.navButton:hover {
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+
+.navButton:active {
+  transform: scale(0.9);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .navButton {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Header controls on the right - matching AnimeSection .header-controls & .collapse-button */
+.headerControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+.actionButton,
+.collapseButton {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-base, 0.15s ease);
 }
 
-.navButton:hover {
-  background: var(--bg-elevated, #27272a);
-  color: var(--text-primary, #fff);
+.actionButton:hover,
+.collapseButton:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.actionButton:active,
+.collapseButton:active {
+  transform: scale(0.95);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .carousel {
   overflow: hidden;
-  margin: 0 -0.5rem;
-  padding: 0 0.5rem;
 }
 
 .track {
   display: flex;
-  gap: 1rem;
+  gap: 20px;
 }
 
 .slide {
-  flex: 0 0 calc((100% - 4rem) / 5);
-  min-width: 170px;
-  max-width: 220px;
+  flex: 0 0 calc((100% - (6 * 20px)) / 7);
+  min-width: 150px;
+}
+
+@media (max-width: 1400px) {
+  .slide {
+    flex: 0 0 calc((100% - (5 * 20px)) / 6);
+  }
 }
 
 @media (max-width: 1200px) {
   .slide {
-    flex: 0 0 calc((100% - 3rem) / 4);
+    flex: 0 0 calc((100% - (4 * 20px)) / 5);
   }
 }
 
 @media (max-width: 900px) {
   .slide {
-    flex: 0 0 calc((100% - 2rem) / 3);
+    flex: 0 0 calc((100% - (3 * 20px)) / 4);
+    max-width: 160px;
+  }
+}
+
+@media (max-width: 768px) {
+  .track {
+    gap: 12px;
+  }
+  .slide {
+    flex: 0 0 calc((100% - (2 * 12px)) / 3);
+    min-width: 0;
+    max-width: 140px;
   }
 }
 
 @media (max-width: 600px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4, 1rem);
+  }
+
+  .titleRow {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 480px) {
   .slide {
-    flex: 0 0 calc((100% - 1rem) / 2);
-    min-width: 140px;
+    flex: 0 0 calc((100% - (1 * 12px)) / 2.2);
+    max-width: 140px;
   }
 }
 
 .skeletonCard {
   width: 100%;
-  aspect-ratio: 2 / 3;
-  border-radius: var(--radius-lg, 12px);
-  background: var(--bg-secondary, #0f0f11);
+  aspect-ratio: 3 / 4;
+  border-radius: var(--radius-md);
 }

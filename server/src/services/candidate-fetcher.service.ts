@@ -72,6 +72,19 @@ export const CandidateFetcherService = {
           anilistId = animeIdMapper.getAnilistIdByMal(s.IDs.MAL[0])
         }
 
+        // 3. Fallback to offline entry lookup
+        let offlineEntry = anilistId ? animeIdMapper.getByAnilistId(anilistId) : null
+        if (!offlineEntry && s.IDs?.AniDB) {
+          offlineEntry = animeIdMapper.getByAnidbId(s.IDs.AniDB)
+        }
+        if (!offlineEntry && s.IDs?.MAL && s.IDs.MAL.length > 0) {
+          offlineEntry = animeIdMapper.getByMalId(s.IDs.MAL[0])
+        }
+
+        if (!anilistId && offlineEntry?.anilistId) {
+          anilistId = offlineEntry.anilistId
+        }
+
         const showId = anilistId ? String(anilistId) : `shoko_${s.IDs.ID}`
 
         // Filter out shows already on watchlist or dismissed
@@ -87,7 +100,7 @@ export const CandidateFetcherService = {
         )[0]
 
         let genres: string[] = []
-        if (metaRow?.genres) {
+        if (metaRow?.genres && metaRow.genres !== '[]') {
           try {
             genres = JSON.parse(metaRow.genres)
           } catch {
@@ -95,13 +108,33 @@ export const CandidateFetcherService = {
           }
         }
 
+        if (genres.length === 0 && offlineEntry?.genres && offlineEntry.genres !== '[]') {
+          try {
+            genres = JSON.parse(offlineEntry.genres)
+          } catch {
+            genres = offlineEntry.genres.split(',').map((g) => g.trim())
+          }
+        }
+
+        // Shoko local poster
+        const preferredPoster =
+          s.Images?.Posters?.find((p) => p.Preferred) ||
+          s.Images?.Posters?.[0] ||
+          s.AniDB?.Poster
+        const localPosterUrl = preferredPoster?.ID
+          ? `/api/shoko/image/${preferredPoster.Source || 'AniDB'}/${preferredPoster.Type || 'Poster'}/${preferredPoster.ID}`
+          : undefined
+
+        const thumbnail = localPosterUrl || offlineEntry?.thumbnail
+
         const candidate: CandidateAnime = {
           id: showId,
-          name: s.Name || s.AniDB?.Title || 'Unknown Local Anime',
-          englishName: s.AniDB?.Title || s.Name,
+          name: s.Name || offlineEntry?.title || s.AniDB?.Title || 'Unknown Local Anime',
+          englishName: s.AniDB?.Title || offlineEntry?.title || s.Name,
           genres,
-          type: metaRow?.type || s.AniDB?.Type || 'TV',
+          type: metaRow?.type || offlineEntry?.type || s.AniDB?.Type || 'TV',
           isLocal: true,
+          thumbnail,
           score: s.AniDB?.Rating?.Value ? Math.round(s.AniDB.Rating.Value * 10) : undefined,
           episodeCount: s.AniDB?.EpisodeCount,
         }
