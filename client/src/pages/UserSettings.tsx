@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useSearchParams } from 'react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   FaUser,
   FaPalette,
@@ -9,6 +10,7 @@ import {
   FaLock,
   FaSignOutAlt,
   FaDesktop,
+  FaCompass,
 } from 'react-icons/fa'
 import { Button } from '../components/common/Button'
 import ToggleSwitch from '../components/common/ToggleSwitch'
@@ -16,10 +18,9 @@ import WatchlistSettings from '../components/settings/WatchlistSettings'
 import ThemeSettings from '../components/settings/ThemeSettings'
 import { useAuth } from '../contexts/AuthContext'
 import { useSetting, useUpdateSetting } from '../hooks/useSettings'
+import { useDismissedRecommendations, useUndismissRecommendation } from '../hooks/useRecommendations'
 import toast from 'react-hot-toast'
 import styles from './UserSettings.module.css'
-
-type UserSettingsTab = 'profile' | 'watchlist' | 'insights' | 'themes'
 
 interface SessionInfo {
   token: string
@@ -30,17 +31,26 @@ interface SessionInfo {
   isCurrent?: boolean
 }
 
-type UserSettingsTab = 'profile' | 'watchlist' | 'insights' | 'themes' | 'appearance'
+type UserSettingsTab = 'profile' | 'watchlist' | 'insights' | 'themes' | 'appearance' | 'recommendations' | 'dismissed'
 
 const UserSettings: React.FC = () => {
+  const queryClient = useQueryClient()
   const { user, refreshUser } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialTab = searchParams.get('tab') as UserSettingsTab | null
   const [activeTab, setActiveTab] = useState<UserSettingsTab>(
-    initialTab && ['profile', 'watchlist', 'insights', 'themes', 'appearance'].includes(initialTab)
-      ? initialTab === 'appearance' ? 'themes' : initialTab
+    initialTab && ['profile', 'watchlist', 'insights', 'themes', 'appearance', 'recommendations', 'dismissed'].includes(initialTab)
+      ? initialTab === 'appearance' ? 'themes' : initialTab === 'dismissed' ? 'recommendations' : initialTab
       : 'profile'
   )
+
+
+  const { data: recMatureSetting } = useSetting('recommendations_include_mature')
+  const [recIncludeMature, setRecIncludeMature] = useState<boolean>(false)
+
+  const { data: dismissedList, isLoading: loadingDismissed } = useDismissedRecommendations()
+  const undismissMutation = useUndismissRecommendation()
+  const [restoringId, setRestoringId] = useState<string | null>(null)
 
   // Profile fields
   const [displayName, setDisplayName] = useState(user?.displayName || '')
@@ -78,13 +88,37 @@ const UserSettings: React.FC = () => {
   }, [insightsIncludeWatchlistSetting])
 
   useEffect(() => {
+    if (recMatureSetting !== undefined) {
+      setRecIncludeMature(recMatureSetting === 'true' || recMatureSetting === true)
+    }
+  }, [recMatureSetting])
+
+  const toggleRecIncludeMature = (enabled: boolean) => {
+    setRecIncludeMature(enabled)
+    updateSetting.mutate(
+      { key: 'recommendations_include_mature', value: String(enabled) },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['recommendations'] })
+        },
+      }
+    )
+  }
+
+  useEffect(() => {
     document.title = 'User Settings - dango'
   }, [])
 
   useEffect(() => {
     const tab = searchParams.get('tab') as UserSettingsTab | null
-    if (tab && ['profile', 'watchlist', 'insights', 'themes', 'appearance'].includes(tab)) {
-      setActiveTab(tab === 'appearance' ? 'themes' : tab)
+    if (tab && ['profile', 'watchlist', 'insights', 'themes', 'appearance', 'recommendations', 'dismissed'].includes(tab)) {
+      if (tab === 'appearance') {
+        setActiveTab('themes')
+      } else if (tab === 'dismissed') {
+        setActiveTab('recommendations')
+      } else {
+        setActiveTab(tab)
+      }
     }
   }, [searchParams])
 
@@ -447,6 +481,99 @@ const UserSettings: React.FC = () => {
           </div>
         )
 
+      case 'recommendations':
+      case 'dismissed':
+        return (
+          <div className={styles.tabContent}>
+            {/* Parameters Section Card */}
+            <div className={styles.sectionCard}>
+              <h3>Parameters</h3>
+              <p>
+                Configure recommendation engine parameters and content filtering rules.
+              </p>
+
+              <div className={styles.settingRow}>
+                <div className={styles.settingInfo}>
+                  <h4 className={styles.settingTitle}>
+                    Add mature content (+18) / hentai
+                  </h4>
+                  <p className={styles.settingDescription}>
+                    Allow recommendations from your library and online catalog to include mature (18+) and hentai titles. When disabled, all adult-rated and hentai content is strictly excluded from recommendation feeds.
+                  </p>
+                </div>
+                <ToggleSwitch
+                  isChecked={recIncludeMature}
+                  onChange={(e) => toggleRecIncludeMature(e.target.checked)}
+                  id="rec-include-mature-toggle"
+                />
+              </div>
+            </div>
+
+            {/* Dismissed Recommendations Section Card */}
+            <div className={styles.sectionCard} id="dismissed-recommendations-section">
+              <h3>Dismissed Recommendations</h3>
+              <p>
+                Anime titles you have hidden from your recommendation feed. Restoring a title will allow it to appear in recommendations again.
+              </p>
+
+              {loadingDismissed ? (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Loading dismissed items...</p>
+              ) : !dismissedList || dismissedList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-tertiary)' }}>
+                  <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    No dismissed recommendations
+                  </p>
+                  <p style={{ margin: '0.5rem 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    When you click the dismiss button (✕) on a recommended show, it will appear here so you can easily restore it later.
+                  </p>
+                </div>
+              ) : (
+                <div className={styles.dismissedList}>
+                  {dismissedList.map((item) => (
+                    <div key={item.showId} className={styles.dismissedRow}>
+                      <div className={styles.dismissedPosterWrap}>
+                        {item.thumbnail ? (
+                          <img
+                            src={item.thumbnail}
+                            alt={item.englishName || item.name || 'Poster'}
+                            className={styles.dismissedPoster}
+                          />
+                        ) : (
+                          <div className={styles.dismissedNoPoster}>No Image</div>
+                        )}
+                      </div>
+                      <div className={styles.dismissedInfo}>
+                        <h4 className={styles.dismissedTitle}>
+                          {item.englishName || item.name || `Anime #${item.showId}`}
+                        </h4>
+                        <div className={styles.dismissedMeta}>
+                          {item.type && <span>{item.type} &bull; </span>}
+                          <span>Dismissed: {new Date(item.dismissedAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={restoringId === item.showId || undismissMutation.isPending}
+                        onClick={async () => {
+                          setRestoringId(item.showId)
+                          try {
+                            await undismissMutation.mutateAsync(item.showId)
+                          } finally {
+                            setRestoringId(null)
+                          }
+                        }}
+                      >
+                        {restoringId === item.showId ? 'Restoring...' : 'Restore'}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
       default:
         return null
     }
@@ -488,6 +615,13 @@ const UserSettings: React.FC = () => {
             id="tab-insights-btn"
           >
             <FaChartPie /> <span>Insights</span>
+          </button>
+          <button
+            className={`${styles.sidebarItem} ${activeTab === 'recommendations' ? styles.active : ''}`}
+            onClick={() => selectTab('recommendations')}
+            id="tab-recommendations-btn"
+          >
+            <FaCompass /> <span>Recommendations</span>
           </button>
         </aside>
 

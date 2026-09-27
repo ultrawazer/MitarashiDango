@@ -35,6 +35,7 @@ export const RecommendationService = {
       limit?: number
       offset?: number
       forceRefresh?: boolean
+      includeMature?: boolean
     }
   ): Promise<{
     items: RecommendationItem[]
@@ -44,11 +45,12 @@ export const RecommendationService = {
     const sourceType = options?.sourceType || 'for_you'
     const limit = options?.limit || 20
     const offset = options?.offset || 0
+    const includeMature = options?.includeMature ?? false
 
     const isFresh = RecommendationsRepository.isCacheFresh(db, sourceType, 24)
 
     if (isFresh && !options?.forceRefresh) {
-      const cached = RecommendationsRepository.getBySourceType(db, sourceType, limit, offset)
+      const cached = RecommendationsRepository.getBySourceType(db, sourceType, limit, offset, includeMature)
       if (cached.length > 0) {
         const profile = RecommendationsRepository.getTasteProfile<UserTasteProfile>(
           db,
@@ -61,7 +63,7 @@ export const RecommendationService = {
     // Refresh recommendations
     await this.computeAndCacheAll(db)
 
-    const items = RecommendationsRepository.getBySourceType(db, sourceType, limit, offset)
+    const items = RecommendationsRepository.getBySourceType(db, sourceType, limit, offset, includeMature)
     const profile = RecommendationsRepository.getTasteProfile<UserTasteProfile>(db, 'current_profile')
 
     return { items, fresh: false, profile }
@@ -145,6 +147,7 @@ export const RecommendationService = {
           status: item.status,
           episodeCount: item.episodeCount,
           popularityScore: item.popularityScore,
+          isAdult: item.isAdult ? 1 : 0,
         })
       }
     }
@@ -278,6 +281,7 @@ export const RecommendationService = {
       episodeCount: sc.candidate.episodeCount,
       status: sc.candidate.status,
       popularityScore: sc.candidate.popularityScore,
+      isAdult: sc.candidate.isAdult,
     }
   },
 }

@@ -5,7 +5,6 @@ import { FaBars, FaCloud, FaGithub, FaSearch } from 'react-icons/fa'
 import NotificationBell from './NotificationBell'
 import Logo from '../common/Logo'
 import UserMenu from './UserMenu'
-import { useAuth } from '../../contexts/AuthContext'
 import { useSidebar } from '../../hooks/useSidebar'
 import { hideVirtualKeyboard } from '../../hooks/useVirtualKeyboard'
 import styles from './Header.module.css'
@@ -58,7 +57,6 @@ const fetchSyncProfile = async (): Promise<UserProfile | null> => {
 
 const Header: React.FC = () => {
   const { toggleSidebar } = useSidebar()
-  const { isAdmin } = useAuth()
   const [query, setQuery] = useState('')
   const [visible, setVisible] = useState(true)
   const [isSearchFocused, setIsSearchFocused] = useState(false)
@@ -172,6 +170,12 @@ const Header: React.FC = () => {
                 Home
               </Link>
               <Link
+                to="/recommendations"
+                className={`${styles.navLink} ${location.pathname.startsWith('/recommendations') ? styles.navLinkActive : ''}`}
+              >
+                Recommendations
+              </Link>
+              <Link
                 to="/watchlist"
                 className={`${styles.navLink} ${location.pathname === '/watchlist' ? styles.navLinkActive : ''}`}
               >
@@ -183,14 +187,6 @@ const Header: React.FC = () => {
               >
                 Insights
               </Link>
-              {isAdmin && (
-                <Link
-                  to="/settings"
-                  className={`${styles.navLink} ${location.pathname.startsWith('/settings') ? styles.navLinkActive : ''}`}
-                >
-                  Settings
-                </Link>
-              )}
             </nav>
           </div>
 

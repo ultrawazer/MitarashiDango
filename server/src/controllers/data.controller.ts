@@ -378,7 +378,7 @@ export class DataController {
     const showId = await getMigratedId(req.db, showIdRaw)
 
     const shokoProviderInstance = this.getProviderByName('shoko')
-    if (showId.startsWith('shoko:') && shokoProviderInstance) {
+    if ((showId.startsWith('shoko:') || showId.startsWith('shoko_')) && shokoProviderInstance) {
       try {
         const data = await shokoProviderInstance.getEpisodes(showId, req.query.mode as 'sub' | 'dub')
         return res.json(data || { episodes: [] })
@@ -583,9 +583,9 @@ export class DataController {
     const showIdRaw = req.params.id as string
     const id = await getMigratedId(req.db, showIdRaw)
 
-    if (id.startsWith('shoko:')) {
+    if (id.startsWith('shoko:') || id.startsWith('shoko_')) {
       try {
-        const seriesId = parseInt(id.replace('shoko:', ''), 10)
+        const seriesId = parseInt(id.replace(/^shoko[:_]/, ''), 10)
         const series = await shokoClient.getSeriesById(seriesId, req.db)
         if (series) {
           const posterObj =

@@ -127,6 +127,10 @@
   transform: scale(1.1);
 }
 
+.playButton:hover {
+  background: #10b981;
+}
+
 .dismissButton:hover {
   background: var(--color-danger, #ef4444);
 }

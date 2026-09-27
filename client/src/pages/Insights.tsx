@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   FaClock,
@@ -12,10 +13,13 @@ import {
   FaTv,
   FaChevronDown,
   FaChevronUp,
+  FaCompass,
+  FaMagic,
 } from 'react-icons/fa'
 import { useGenreCards, type GenreCard, type TopShow } from '../hooks/useAnimeData'
 import { fixThumbnailUrl } from '../lib/utils'
 import { useTitlePreference } from '../contexts/TitlePreferenceContext'
+import { useTasteProfile } from '../hooks/useRecommendations'
 import { ActivityDayDrawer } from '../components/insights/ActivityDayDrawer'
 import { GenreExplorerDrawer } from '../components/insights/GenreExplorerDrawer'
 import styles from './Insights.module.css'
@@ -77,6 +81,27 @@ const Insights: React.FC = () => {
 
   const { data: genreCardsData, isLoading: isLoadingGenreCards } = useGenreCards()
   const { titlePreference } = useTitlePreference()
+  const { data: tasteProfile } = useTasteProfile()
+
+  const topTasteGenres = useMemo(() => {
+    if (!tasteProfile?.genreWeights) return []
+    return Object.entries(tasteProfile.genreWeights)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+  }, [tasteProfile])
+
+  const topTasteThemes = useMemo(() => {
+    if (!tasteProfile?.themeWeights) return []
+    return Object.entries(tasteProfile.themeWeights)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+  }, [tasteProfile])
+
+  const dominantTone = useMemo(() => {
+    if (!tasteProfile?.toneWeights) return null
+    const sorted = Object.entries(tasteProfile.toneWeights).sort(([, a], [, b]) => b - a)
+    return sorted.length > 0 && sorted[0][1] > 0 ? sorted[0][0] : null
+  }, [tasteProfile])
 
   const getShowTitle = (show: TopShow) => {
     switch (titlePreference) {
@@ -532,6 +557,145 @@ const Insights: React.FC = () => {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Recommendation Taste Profile */}
+      <div className={styles.tasteSection}>
+        <div className={styles.tasteSectionHeader}>
+          <div className={styles.tasteTitleArea}>
+            <h3 className={styles.tasteSectionTitle}>
+              <FaCompass style={{ color: 'var(--accent)' }} /> Recommendation Taste Profile
+            </h3>
+            <p className={styles.tasteSectionSubtitle}>
+              Semantic affinities, atmospheric tones, and seed anchors powering your personalized suggestions
+            </p>
+          </div>
+          {dominantTone && (
+            <div className={styles.tasteToneBadge}>
+              <FaMagic />
+              <span>Dominant Tone: {dominantTone.charAt(0).toUpperCase() + dominantTone.slice(1)}</span>
+            </div>
+          )}
+        </div>
+
+        {!tasteProfile || (topTasteGenres.length === 0 && topTasteThemes.length === 0) ? (
+          <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-tertiary)' }}>
+            <p style={{ margin: 0, fontSize: '0.9rem' }}>
+              Your taste profile is still calibrating. Rate or complete shows in your watchlist to see your affinity breakdown.
+            </p>
+          </div>
+        ) : (
+          <div className={styles.tasteGrid}>
+            <div className={styles.tasteCol}>
+              <div>
+                <h4 className={styles.tasteColTitle}>
+                  <span>Top Genre Affinities</span>
+                </h4>
+                {topTasteGenres.map(([genre, weight]) => (
+                  <div key={genre} className={styles.weightBarRow}>
+                    <div className={styles.weightBarLabels}>
+                      <span>{genre.charAt(0).toUpperCase() + genre.slice(1)}</span>
+                      <span>{Math.round(weight * 100)}%</span>
+                    </div>
+                    <div className={styles.weightBarTrack}>
+                      <div
+                        className={styles.weightBarFill}
+                        style={{ width: `${Math.max(8, Math.min(100, weight * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {topTasteThemes.length > 0 && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <h4 className={styles.tasteColTitle}>
+                    <span>Leading Narrative Themes</span>
+                  </h4>
+                  {topTasteThemes.map(([theme, weight]) => (
+                    <div key={theme} className={styles.weightBarRow}>
+                      <div className={styles.weightBarLabels}>
+                        <span>{theme.charAt(0).toUpperCase() + theme.slice(1)}</span>
+                        <span>{Math.round(weight * 100)}%</span>
+                      </div>
+                      <div className={styles.weightBarTrack}>
+                        <div
+                          className={`${styles.weightBarFill} ${styles.themeBarFill}`}
+                          style={{ width: `${Math.max(8, Math.min(100, weight * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className={styles.tasteCol}>
+              {tasteProfile.toneWeights && Object.keys(tasteProfile.toneWeights).length > 0 && (
+                <div>
+                  <h4 className={styles.tasteColTitle}>
+                    <span>Atmospheric & Tone Traits</span>
+                  </h4>
+                  <div className={styles.toneList}>
+                    {Object.entries(tasteProfile.toneWeights)
+                      .filter(([, w]) => w > 0.2)
+                      .sort(([, a], [, b]) => b - a)
+                      .map(([tone, weight]) => (
+                        <span key={tone} className={styles.toneChip}>
+                          <span style={{ color: 'var(--accent)' }}>●</span>
+                          <span>{tone.charAt(0).toUpperCase() + tone.slice(1)}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                            {Math.round(weight * 100)}%
+                          </span>
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {tasteProfile.topSeeds && tasteProfile.topSeeds.length > 0 && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <h4 className={styles.tasteColTitle}>
+                    <span>Anchor Seeds</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                      (Shows shaping your recommendations)
+                    </span>
+                  </h4>
+                  <div className={styles.seedGrid}>
+                    {tasteProfile.topSeeds.map((seed) => {
+                      const seedTitle =
+                        (titlePreference === 'englishName' && seed.englishName) ||
+                        seed.name ||
+                        `Anime #${seed.id}`
+                      return (
+                        <Link
+                          key={seed.id}
+                          to={`/anime/${seed.id}`}
+                          className={styles.seedCard}
+                          title={seedTitle}
+                        >
+                          <div className={styles.seedPosterWrap}>
+                            {seed.thumbnail ? (
+                              <img
+                                src={fixThumbnailUrl(seed.thumbnail)}
+                                alt={seedTitle}
+                                className={styles.seedPoster}
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className={styles.seedNoPoster}>No Image</div>
+                            )}
+                          </div>
+                          <p className={styles.seedTitle}>{seedTitle}</p>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={styles.genreSection}>

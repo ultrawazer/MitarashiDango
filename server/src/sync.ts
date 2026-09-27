@@ -505,10 +505,16 @@ export async function initializeDatabase(dbPath: string): Promise<DatabaseWrappe
         isLocal INTEGER DEFAULT 0,
         mediaType TEXT,
         sourceType TEXT NOT NULL,
+        isAdult INTEGER DEFAULT 0,
         computedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(showId, sourceType)
       )`
     )
+    try {
+      db.run('ALTER TABLE recommendations_cache ADD COLUMN isAdult INTEGER DEFAULT 0')
+    } catch {
+      // Column already exists
+    }
     db.run(
       `CREATE TABLE IF NOT EXISTS dismissed_recommendations (
         showId TEXT PRIMARY KEY,
@@ -527,6 +533,9 @@ export async function initializeDatabase(dbPath: string): Promise<DatabaseWrappe
     )
     db.run(
       `CREATE INDEX IF NOT EXISTS idx_recommendations_cache_showId ON recommendations_cache(showId)`
+    )
+    db.run(
+      `CREATE INDEX IF NOT EXISTS idx_recommendations_cache_mature ON recommendations_cache(sourceType, isAdult, score DESC)`
     )
 
     try {

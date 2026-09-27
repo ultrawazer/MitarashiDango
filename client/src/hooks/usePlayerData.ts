@@ -274,7 +274,7 @@ export const usePlayerData = (
       uiState.selectedProvider === 'ht' ||
       uiState.selectedProvider === 'op'
     if (hasForcedAdultProvider.current === showId) return
-    if (showMeta.isAdult && !matureProvider) {
+    if (showMeta.isAdult && !matureProvider && uiState.selectedProvider !== 'shoko') {
       hasForcedAdultProvider.current = showId
       dispatch({ type: 'SET_PROVIDER', payload: 'wh' })
     }
@@ -309,6 +309,7 @@ export const usePlayerData = (
 
   useEffect(() => {
     if (!showMeta?.isAdult || loadingVideo || !currentEpisode) return
+    if (uiState.selectedProvider === 'shoko') return
     const matureProviders = ['wh', 'hn', 'ht', 'op']
     if (videoError || (videoData && (!videoData.videoSources || videoData.videoSources.length === 0))) {
       triedMatureProvidersRef.current.add(uiState.selectedProvider)

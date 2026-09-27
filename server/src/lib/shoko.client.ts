@@ -364,6 +364,33 @@ export class ShokoClient {
     }
   }
 
+  public async getSeriesAniDB(
+    seriesId: number,
+    db?: DatabaseWrapper
+  ): Promise<{
+    id: number
+    shokoId?: number
+    type?: string
+    title?: string
+    restricted?: boolean
+  } | null> {
+    try {
+      const { client } = this.getClient(db)
+      const res = await client.get(`/api/v3/Series/${seriesId}/AniDB`)
+      const d = res.data
+      if (!d) return null
+      return {
+        id: d.ID,
+        shokoId: d.ShokoID,
+        type: d.Type,
+        title: d.Title,
+        restricted: Boolean(d.Restricted),
+      }
+    } catch {
+      return null
+    }
+  }
+
   public async searchSeries(
     query: string,
     db?: DatabaseWrapper,

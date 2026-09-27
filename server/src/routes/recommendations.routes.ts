@@ -11,6 +11,8 @@ export function createRecommendationsRouter(): Router {
   router.post('/recommendations/refresh', controller.refresh)
   router.post('/recommendations/:showId/dismiss', controller.dismiss)
   router.delete('/recommendations/:showId/dismiss', controller.undismiss)
+  router.post('/recommendations/:showId/undismiss', controller.undismiss)
+  router.get('/recommendations/dismissed', controller.getDismissed)
 
   return router
 }

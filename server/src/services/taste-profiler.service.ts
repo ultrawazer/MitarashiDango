@@ -8,6 +8,13 @@ import logger from '../logger'
 
 const log = logger.child({ module: 'TasteProfiler' })
 
+export interface SeedShowInfo {
+  id: string
+  name: string
+  englishName?: string
+  thumbnail?: string
+}
+
 export interface UserTasteProfile {
   genreWeights: Record<string, number>
   themeWeights: Record<string, number>
@@ -16,6 +23,7 @@ export interface UserTasteProfile {
   totalCompleted: number
   totalWatching: number
   avgScore: number
+  topSeeds?: SeedShowInfo[]
 }
 
 interface RawWatchlistCandidate {
@@ -28,6 +36,7 @@ interface RawWatchlistCandidate {
   watchedEpisodes: number | null
   totalEpisodes: number | null
   type: string | null
+  thumbnail: string | null
   genres: string | null
   tags: string | null
   popularityScore: number | null
@@ -60,6 +69,7 @@ export const TasteProfilerService = {
       SELECT 
         w.id, w.name, w.englishName, w.nativeName, w.status, w.score,
         w.watchedEpisodes, w.totalEpisodes, w.type,
+        COALESCE(sm.thumbnail, w.thumbnail, '') as thumbnail,
         sm.genres, sm.tags, sm.popularityScore,
         COALESCE(we_agg.ep_count, 0) as watchedCount
       FROM watchlist w
@@ -179,6 +189,7 @@ export const TasteProfilerService = {
           type: item.raw.type || undefined,
           score: item.raw.score || undefined,
           popularityScore: item.raw.popularityScore || undefined,
+          thumbnail: item.raw.thumbnail || undefined,
         }
         item.features = features
         seeds.push(features)
@@ -234,6 +245,12 @@ export const TasteProfilerService = {
       totalCompleted: completedCount,
       totalWatching: watchingCount,
       avgScore: ratedCount > 0 ? Math.round((totalScoreSum / ratedCount) * 10) / 10 : 7.5,
+      topSeeds: seeds.map((s) => ({
+        id: s.id,
+        name: s.name,
+        englishName: s.englishName,
+        thumbnail: s.thumbnail,
+      })),
     }
 
     return { seeds, profile }

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { RecommendationService } from '../services/recommendation.service'
 import { RecommendationsRepository } from '../repositories/recommendations.repository'
+import { SettingsRepository } from '../repositories/settings.repository'
 import logger from '../logger'
 
 const log = logger.child({ module: 'RecommendationsController' })
@@ -15,11 +16,15 @@ export class RecommendationsController {
       const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0
       const forceRefresh = req.query.refresh === 'true'
 
+      const matureSetting = SettingsRepository.getByKey(req.db, 'recommendations_include_mature')
+      const includeMature = matureSetting?.value === 'true'
+
       const result = await RecommendationService.getRecommendations(req.db, {
         sourceType: 'for_you',
         limit,
         offset,
         forceRefresh,
+        includeMature,
       })
 
       res.json({
@@ -43,11 +48,15 @@ export class RecommendationsController {
       const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0
       const forceRefresh = req.query.refresh === 'true'
 
+      const matureSetting = SettingsRepository.getByKey(req.db, 'recommendations_include_mature')
+      const includeMature = matureSetting?.value === 'true'
+
       const result = await RecommendationService.getRecommendations(req.db, {
         sourceType: 'local_library',
         limit,
         offset,
         forceRefresh,
+        includeMature,
       })
 
       res.json({
@@ -129,6 +138,19 @@ export class RecommendationsController {
     } catch (err) {
       log.error({ err }, 'Failed restoring dismissed recommendation')
       res.status(500).json({ success: false, error: 'Failed to restore recommendation' })
+    }
+  }
+
+  /**
+   * GET /api/recommendations/dismissed
+   */
+  getDismissed = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const items = RecommendationsRepository.getDismissedList(req.db)
+      res.json({ success: true, data: items })
+    } catch (err) {
+      log.error({ err }, 'Failed getting dismissed recommendations')
+      res.status(500).json({ success: false, error: 'Failed to retrieve dismissed recommendations' })
     }
   }
 }

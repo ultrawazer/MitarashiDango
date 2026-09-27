@@ -13,6 +13,7 @@ import {
   FaHeadphones,
   FaTv,
   FaBroadcastTower,
+  FaCompass,
 } from 'react-icons/fa'
 import Logo from '../common/Logo'
 import packageJson from '../../../package.json'
@@ -28,6 +29,7 @@ const Sidebar: React.FC = () => {
   const navItems = [
     { to: '/', icon: <FaHome />, label: 'Home' },
     { to: '/search', icon: <FaSearch />, label: 'Search' },
+    { to: '/recommendations', icon: <FaCompass />, label: 'Recommendations' },
     { to: '/watchlist', icon: <FaClock />, label: 'Watchlist' },
     { to: '/insights', icon: <FaChartPie />, label: 'Insights' },
     { to: '/trackers', icon: <FaSyncAlt />, label: 'Trackers' },

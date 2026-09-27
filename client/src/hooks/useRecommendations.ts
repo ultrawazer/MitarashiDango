@@ -6,10 +6,21 @@ import type {
   ScoreBreakdown,
   RecommendationItem,
   UserTasteProfile,
+  SeedShowInfo,
   RecommendationsApiResponse,
+  DismissedItem,
+  DismissedApiResponse,
 } from '../types/recommendations'
 
-export type { ScoreBreakdown, RecommendationItem, UserTasteProfile, RecommendationsApiResponse }
+export type {
+  ScoreBreakdown,
+  RecommendationItem,
+  UserTasteProfile,
+  SeedShowInfo,
+  RecommendationsApiResponse,
+  DismissedItem,
+  DismissedApiResponse,
+}
 
 
 export const useRecommendations = (limit = 20, offset = 0) => {
@@ -134,6 +145,39 @@ export const useDismissRecommendation = () => {
     onSuccess: () => {
       toast.success('Recommendation dismissed')
       queryClient.invalidateQueries({ queryKey: ['recommendations'] })
+    },
+  })
+}
+
+export const useDismissedRecommendations = () => {
+  return useQuery<DismissedItem[]>({
+    queryKey: ['recommendations', 'dismissed'],
+    queryFn: async () => {
+      const res: DismissedApiResponse = await fetchApi('/api/recommendations/dismissed')
+      return res.data || []
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  })
+}
+
+export const useUndismissRecommendation = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (showId: string) => {
+      const res = await fetch(`/api/recommendations/${showId}/undismiss`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) throw new Error('Failed to restore recommendation')
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success('Recommendation restored')
+      queryClient.invalidateQueries({ queryKey: ['recommendations'] })
+    },
+    onError: () => {
+      toast.error('Could not restore recommendation')
     },
   })
 }

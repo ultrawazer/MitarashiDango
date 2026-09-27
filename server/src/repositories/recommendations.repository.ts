@@ -29,6 +29,17 @@ export interface RecommendationItem {
   episodeCount?: number
   status?: string
   popularityScore?: number
+  isAdult?: boolean
+}
+
+export interface DismissedItem {
+  showId: string
+  dismissedAt: string
+  name?: string
+  englishName?: string
+  nativeName?: string
+  thumbnail?: string
+  type?: string
 }
 
 interface RawRecommendationRow {
@@ -50,6 +61,7 @@ interface RawRecommendationRow {
   episodeCount: number | null
   status: string | null
   popularityScore: number | null
+  isAdult: number | null
 }
 
 function safeParseBreakdown(jsonStr: string | null): ScoreBreakdown {
@@ -81,15 +93,26 @@ function safeParseGenres(genresStr: string | null): string[] {
 }
 
 export const RecommendationsRepository = {
+  ensureTables: (db: DatabaseWrapper): void => {
+    try {
+      db.run('ALTER TABLE recommendations_cache ADD COLUMN isAdult INTEGER DEFAULT 0')
+    } catch {
+      // Column already exists
+    }
+  },
+
   getBySourceType: (
     db: DatabaseWrapper,
     sourceType: string,
     limit = 20,
-    offset = 0
+    offset = 0,
+    includeMature = false
   ): RecommendationItem[] => {
-    const query = `
+    RecommendationsRepository.ensureTables(db)
+    let query = `
       SELECT 
         rc.id, rc.showId, rc.score, rc.breakdown, rc.reason, rc.isLocal, rc.mediaType, rc.sourceType, rc.computedAt,
+        COALESCE(rc.isAdult, sm.isAdult, 0) as isAdult,
         COALESCE(sm.name, '') as name,
         COALESCE(sm.englishName, '') as englishName,
         COALESCE(sm.nativeName, '') as nativeName,
@@ -104,6 +127,19 @@ export const RecommendationsRepository = {
       WHERE rc.sourceType = ?
         AND rc.showId NOT IN (SELECT showId FROM dismissed_recommendations)
         AND rc.showId NOT IN (SELECT id FROM watchlist WHERE status IN ('Completed', 'Watching', 'Dropped'))
+    `
+
+    if (!includeMature) {
+      query += `
+        AND COALESCE(rc.isAdult, 0) = 0
+        AND COALESCE(sm.isAdult, 0) = 0
+        AND COALESCE(sm.genres, '') NOT LIKE '%Hentai%'
+        AND COALESCE(sm.type, '') != 'ADULT'
+        AND COALESCE(rc.mediaType, '') != 'ADULT'
+      `
+    }
+
+    query += `
       ORDER BY rc.score DESC
       LIMIT ? OFFSET ?
     `
@@ -128,10 +164,12 @@ export const RecommendationsRepository = {
       episodeCount: r.episodeCount != null ? Number(r.episodeCount) : undefined,
       status: r.status || undefined,
       popularityScore: r.popularityScore != null ? Number(r.popularityScore) : undefined,
+      isAdult: Boolean(r.isAdult),
     }))
   },
 
   saveBatch: (db: DatabaseWrapper, items: RecommendationItem[], sourceType: string): void => {
+    RecommendationsRepository.ensureTables(db)
     db.serialize(() => {
       // Clear old entries for this source type
       dbRun(db, 'DELETE FROM recommendations_cache WHERE sourceType = ?', [sourceType])
@@ -140,8 +178,8 @@ export const RecommendationsRepository = {
         dbRun(
           db,
           `INSERT OR REPLACE INTO recommendations_cache 
-           (showId, score, breakdown, reason, isLocal, mediaType, sourceType, computedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+           (showId, score, breakdown, reason, isLocal, mediaType, sourceType, isAdult, computedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
           [
             item.showId,
             item.score,
@@ -150,6 +188,7 @@ export const RecommendationsRepository = {
             item.isLocal ? 1 : 0,
             item.mediaType ?? null,
             sourceType,
+            item.isAdult ? 1 : 0,
           ]
         )
       }
@@ -200,6 +239,41 @@ export const RecommendationsRepository = {
   getDismissedIds: (db: DatabaseWrapper): string[] => {
     const rows = dbAll<{ showId: string }>(db, 'SELECT showId FROM dismissed_recommendations')
     return rows.map((r) => r.showId)
+  },
+
+  getDismissedList: (db: DatabaseWrapper): DismissedItem[] => {
+    const query = `
+      SELECT 
+        dr.showId, 
+        dr.dismissedAt,
+        COALESCE(sm.name, '') as name,
+        COALESCE(sm.englishName, '') as englishName,
+        COALESCE(sm.nativeName, '') as nativeName,
+        COALESCE(sm.thumbnail, '') as thumbnail,
+        COALESCE(sm.type, '') as type
+      FROM dismissed_recommendations dr
+      LEFT JOIN shows_meta sm ON dr.showId = sm.id
+      ORDER BY dr.dismissedAt DESC
+    `
+    const rows = dbAll<{
+      showId: string
+      dismissedAt: string
+      name: string
+      englishName: string
+      nativeName: string
+      thumbnail: string
+      type: string
+    }>(db, query)
+
+    return rows.map((r) => ({
+      showId: r.showId,
+      dismissedAt: r.dismissedAt,
+      name: r.name || undefined,
+      englishName: r.englishName || undefined,
+      nativeName: r.nativeName || undefined,
+      thumbnail: r.thumbnail || undefined,
+      type: r.type || undefined,
+    }))
   },
 
   saveTasteProfile: (db: DatabaseWrapper, key: string, data: unknown): void => {

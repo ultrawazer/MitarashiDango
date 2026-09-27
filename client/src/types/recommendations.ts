@@ -23,15 +23,25 @@ export interface RecommendationItem {
   episodeCount?: number
   status?: string
   popularityScore?: number
+  isAdult?: boolean
+}
+
+export interface SeedShowInfo {
+  id: string
+  name: string
+  englishName?: string
+  thumbnail?: string
 }
 
 export interface UserTasteProfile {
   genreWeights: Record<string, number>
   themeWeights: Record<string, number>
   toneWeights: Record<string, number>
+  topDemographics?: string[]
   totalCompleted: number
   totalWatching: number
   avgScore: number
+  topSeeds?: SeedShowInfo[]
 }
 
 export interface RecommendationsApiResponse {
@@ -39,4 +49,19 @@ export interface RecommendationsApiResponse {
   data: RecommendationItem[]
   fresh: boolean
   profile?: UserTasteProfile | null
+}
+
+export interface DismissedItem {
+  showId: string
+  dismissedAt: string
+  name?: string
+  englishName?: string
+  nativeName?: string
+  thumbnail?: string
+  type?: string
+}
+
+export interface DismissedApiResponse {
+  success: boolean
+  data: DismissedItem[]
 }

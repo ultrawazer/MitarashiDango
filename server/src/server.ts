@@ -47,6 +47,8 @@ import { createTranslateRouter } from './routes/translate.routes'
 import { createTrackerRouter } from './routes/tracker.routes'
 import { createFlareSolverrRouter } from './routes/flaresolverr.routes'
 import { createRecommendationsRouter } from './routes/recommendations.routes'
+import { RecommendationsRepository } from './repositories/recommendations.repository'
+import { RecommendationService } from './services/recommendation.service'
 import { flareSolverrService } from './services/flaresolverr.service'
 import { SettingsRepository } from './repositories/settings.repository'
 import { requestContext } from './utils/request-context'
@@ -359,6 +361,19 @@ async function main() {
     })
   }, 60 * 60 * 1000)
 
+  // Recalculate recommendations periodically if cache is older than 7 days
+  const recommendationsInterval = setInterval(() => {
+    const currentPrimary = getPrimaryDb()
+    if (currentPrimary) {
+      if (!RecommendationsRepository.isCacheFresh(currentPrimary, 'for_you', 24 * 7)) {
+        logger.info('Weekly recommendation recalculation triggered by periodic schedule...')
+        RecommendationService.refreshRecommendations(currentPrimary).catch((err) => {
+          logger.warn({ err }, 'Periodic recommendation refresh failed')
+        })
+      }
+    }
+  }, 12 * 60 * 60 * 1000)
+
   const shutdown = async (signal?: string) => {
     if (isShuttingDown) return
     isShuttingDown = true
@@ -366,6 +381,7 @@ async function main() {
     clearInterval(syncInterval)
     clearInterval(offlineDbInterval)
     clearInterval(shokoMapInterval)
+    clearInterval(recommendationsInterval)
     flareSolverrService.stopPeriodicPreWarm()
     await watcher.close()
 

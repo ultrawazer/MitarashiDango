@@ -1,4 +1,6 @@
 import React from 'react'
+import { useNavigate } from 'react-router'
+import { FaPlay } from 'react-icons/fa'
 import { Modal } from '../common/Modal'
 import { Button } from '../common/Button'
 import type { RecommendationItem } from '../../types/recommendations'
@@ -19,6 +21,7 @@ export const ScoreBreakdownModal: React.FC<ScoreBreakdownModalProps> = ({
   onWatch,
   onDismiss,
 }) => {
+  const navigate = useNavigate()
   if (!item) return null
 
   const breakdown = item.breakdown || {
@@ -71,7 +74,7 @@ export const ScoreBreakdownModal: React.FC<ScoreBreakdownModalProps> = ({
       title="Recommendation Breakdown"
       width="md"
       footer={
-        <div style={{ display: 'flex', gap: '0.75rem', width: '100%', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', width: '100%', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           {onDismiss && (
             <Button
               variant="secondary"
@@ -84,16 +87,35 @@ export const ScoreBreakdownModal: React.FC<ScoreBreakdownModalProps> = ({
               Not Interested
             </Button>
           )}
-          {onWatch && (
+          {item.isLocal ? (
             <Button
               variant="primary"
               size="sm"
               onClick={() => {
-                onWatch(item)
+                if (onWatch) {
+                  onWatch(item)
+                } else {
+                  navigate(`/watch/${item.showId}/1`)
+                }
                 onClose()
               }}
             >
-              Watch Now
+              <FaPlay size={10} style={{ marginRight: '6px' }} /> Play Episode 1
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                if (onWatch) {
+                  onWatch(item)
+                } else {
+                  navigate(`/anime/${item.showId}`)
+                }
+                onClose()
+              }}
+            >
+              View Anime Details
             </Button>
           )}
         </div>

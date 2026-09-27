@@ -1,6 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router'
-import { FaInfoCircle, FaTimes, FaHdd } from 'react-icons/fa'
+import { FaInfoCircle, FaTimes, FaHdd, FaPlay } from 'react-icons/fa'
 import type { RecommendationItem } from '../../types/recommendations'
 import { useTitlePreference } from '../../contexts/TitlePreferenceContext'
 import styles from './RecommendationCard.module.css'
@@ -33,6 +33,12 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
   const handleCardClick = () => {
     // Navigate to show details
     navigate(`/anime/${item.showId}`)
+  }
+
+  const handlePlayClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    navigate(`/watch/${item.showId}/1`)
   }
 
   const handleInfoClick = (e: React.MouseEvent) => {
@@ -85,6 +91,17 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
 
         {/* Card Overlay Quick Actions */}
         <div className={styles.cardActions}>
+          {item.isLocal && (
+            <button
+              type="button"
+              className={`${styles.actionButton} ${styles.playButton}`}
+              onClick={handlePlayClick}
+              title="Play Episode 1"
+              aria-label="Play Episode 1"
+            >
+              <FaPlay size={10} style={{ marginLeft: '2px' }} />
+            </button>
+          )}
           <button
             type="button"
             className={styles.actionButton}

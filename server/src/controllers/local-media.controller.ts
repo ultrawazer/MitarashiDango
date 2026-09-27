@@ -597,13 +597,29 @@ export class LocalMediaController {
       if (!shokoEpId && showId && episodeNumber) {
         let numericSeriesId: number | null = null
 
-        if (String(showId).startsWith('shoko:')) {
-          numericSeriesId = parseInt(String(showId).replace('shoko:', ''), 10)
+        if (String(showId).startsWith('shoko:') || String(showId).startsWith('shoko_')) {
+          numericSeriesId = parseInt(String(showId).replace(/^shoko[:_]/, ''), 10)
         } else if (/^\d+$/.test(String(showId))) {
-          const anidbId = animeIdMapper.getAnidbIdByAnilist(parseInt(showId, 10))
+          const anilistId = parseInt(showId, 10)
+          const anidbId = animeIdMapper.getAnidbIdByAnilist(anilistId)
           if (anidbId) {
             const series = await shokoClient.getSeriesByAnidbId(anidbId, req.db)
             if (series?.IDs?.ID) numericSeriesId = series.IDs.ID
+          }
+          if (!numericSeriesId) {
+            const byId = await shokoClient.getSeriesById(anilistId, req.db)
+            if (byId?.IDs?.ID) numericSeriesId = byId.IDs.ID
+          }
+          if (!numericSeriesId) {
+            try {
+              const mappedRow = req.db.get<{ legacyId: string }>(
+                'SELECT legacyId FROM legacy_id_mapping WHERE numericId = ? LIMIT 1',
+                [showId]
+              )
+              if (mappedRow?.legacyId && (mappedRow.legacyId.startsWith('shoko:') || mappedRow.legacyId.startsWith('shoko_'))) {
+                numericSeriesId = parseInt(mappedRow.legacyId.replace(/^shoko[:_]/, ''), 10)
+              }
+            } catch {}
           }
         }
 
@@ -764,6 +780,8 @@ export class LocalMediaController {
           ? `/api/shoko/image/${preferredBackdrop.Source || 'TMDB'}/${preferredBackdrop.Type || 'Backdrop'}/${preferredBackdrop.ID}`
           : undefined
 
+        const isAdult = Boolean(s.AniDB?.Restricted) || s.AniDB?.Type?.toLowerCase() === 'hentai'
+
         return {
           _id: anilistId ? anilistId.toString() : `shoko:${s.IDs.ID}`,
           id: anilistId ? anilistId.toString() : `shoko:${s.IDs.ID}`,
@@ -776,7 +794,8 @@ export class LocalMediaController {
           bannerImage: bannerUrl,
           description: s.AniDB?.Description,
           episodeCount: s.Sizes?.Local?.Normal ?? s.AniDB?.EpisodeCount ?? 0,
-          type: s.AniDB?.Type || 'TV',
+          type: isAdult ? 'ADULT' : (s.AniDB?.Type || 'TV'),
+          isAdult,
           isLocal: true,
         }
       })

@@ -374,21 +374,20 @@ export default function useAnime4K({
                   )
                   lastCapturedRef.current = presented
                   uploaded = true
-                } catch (err) {
-                  if (err instanceof TypeError) {
-                    directUploadFailedRef.current = true
-                    console.info(
-                      '[anime4k] direct video upload unsupported on this device, using ImageBitmap fallback'
-                    )
-                  } else {
-                    throw err
-                  }
+                } catch {
+                  directUploadFailedRef.current = true
+                  console.info(
+                    '[anime4k] direct video upload failed, using ImageBitmap fallback'
+                  )
                 }
               }
 
               // Bitmap Fallback / Legacy Compatibility Mode
               if (!uploaded) {
-                const bmp = await createImageBitmap(current)
+                const bmp = await createImageBitmap(current, {
+                  resizeWidth: width,
+                  resizeHeight: height,
+                })
                 lastCapturedRef.current = presented
                 device.queue.copyExternalImageToTexture(
                   { source: bmp },
@@ -399,7 +398,10 @@ export default function useAnime4K({
               }
             } else {
               // Delayed frames queue for A/V sync calibration
-              const fresh = await createImageBitmap(current)
+              const fresh = await createImageBitmap(current, {
+                resizeWidth: width,
+                resizeHeight: height,
+              })
               lastCapturedRef.current = presented
               const queue = delayQueueRef.current
               queue.push({ bitmap: fresh, capture: now })

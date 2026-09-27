@@ -18,6 +18,8 @@ export interface AnimeFeatures {
   type?: string
   score?: number
   popularityScore?: number
+  thumbnail?: string
+  isAdult?: boolean
 }
 
 export interface SimilarityWeights {

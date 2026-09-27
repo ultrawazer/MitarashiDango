@@ -26,6 +26,7 @@ const Radio = lazy(() => import('./pages/Radio'))
 const Tv = lazy(() => import('./pages/Tv'))
 const Trackers = lazy(() => import('./pages/Trackers'))
 const Insights = lazy(() => import('./pages/Insights'))
+const Recommendations = lazy(() => import('./pages/Recommendations'))
 const AnimeInfoPage = lazy(() => import('./pages/AnimeInfoPage'))
 
 const PlayerRedirect = () => {
@@ -144,6 +145,7 @@ function App() {
               <Route path="/trackers" element={<Trackers />} />
               <Route path="/mal" element={<Navigate to="/trackers" replace />} />
               <Route path="/insights" element={<Insights />} />
+              <Route path="/recommendations" element={<Recommendations />} />
               <Route path="/anime/:id" element={<AnimeInfoPage />} />
               <Route path="/watch/:id" element={<Player />} />
               <Route path="/watch/:id/:episodeNumber" element={<Player />} />

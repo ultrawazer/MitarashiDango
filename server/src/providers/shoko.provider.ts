@@ -11,6 +11,7 @@ import {
 } from './provider.interface'
 import { shokoClient, ShokoSeries, ShokoEpisode } from '../lib/shoko.client'
 import { animeIdMapper } from '../lib/anime-id-mapper'
+import { getShowMetaById } from '../lib/anilist'
 import logger from '../logger'
 
 const log = logger.child({ module: 'ShokoProvider' })
@@ -52,6 +53,11 @@ export class ShokoProvider implements Provider {
     _mode?: 'sub' | 'dub'
   ): Promise<string | null> {
     try {
+      // 0. If title already has shoko: or shoko_ prefix
+      if (title.startsWith('shoko:') || title.startsWith('shoko_')) {
+        return `shoko:${title.replace(/^shoko[:_]/, '')}`
+      }
+
       // 1. If title is a numeric string (AniList ID)
       if (/^\d+$/.test(title)) {
         const anilistId = parseInt(title, 10)
@@ -62,6 +68,24 @@ export class ShokoProvider implements Provider {
             return `shoko:${series.IDs.ID}`
           }
         }
+
+        // Fallback: If numeric ID matches a Shoko series ID directly
+        const byId = await shokoClient.getSeriesById(anilistId)
+        if (byId?.IDs?.ID) {
+          return `shoko:${byId.IDs.ID}`
+        }
+
+        // Fallback: lookup title of numeric ID from metadata
+        try {
+          const meta = await getShowMetaById(title)
+          if (meta) {
+            const actualTitle = meta.englishName || meta.name
+            const actualRomaji = meta.names?.romaji || romaji
+            if (actualTitle && actualTitle !== title) {
+              return await this.resolveShowId(actualTitle, actualRomaji, _mode)
+            }
+          }
+        } catch {}
       }
 
       // 2. Search series by title / romaji
@@ -371,8 +395,8 @@ export class ShokoProvider implements Provider {
   }
 
   private async extractSeriesId(showId: string): Promise<number | null> {
-    if (showId.startsWith('shoko:')) {
-      return parseInt(showId.replace('shoko:', ''), 10) || null
+    if (showId.startsWith('shoko:') || showId.startsWith('shoko_')) {
+      return parseInt(showId.replace(/^shoko[:_]/, ''), 10) || null
     }
 
     if (/^\d+$/.test(showId)) {
@@ -386,6 +410,21 @@ export class ShokoProvider implements Provider {
       // If numeric ID matches a Shoko series ID directly
       const byId = await shokoClient.getSeriesById(anilistId)
       if (byId?.IDs?.ID) return byId.IDs.ID
+
+      // Fallback: lookup title of numeric ID from metadata and match locally
+      try {
+        const meta = await getShowMetaById(showId)
+        if (meta) {
+          const actualTitle = meta.englishName || meta.name
+          const actualRomaji = meta.names?.romaji
+          if (actualTitle) {
+            const resolved = await this.resolveShowId(actualTitle, actualRomaji)
+            if (resolved && (resolved.startsWith('shoko:') || resolved.startsWith('shoko_'))) {
+              return parseInt(resolved.replace(/^shoko[:_]/, ''), 10) || null
+            }
+          }
+        }
+      } catch {}
     }
 
     return null

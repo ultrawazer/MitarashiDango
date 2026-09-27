@@ -24,6 +24,7 @@ import {
 } from '../lib/anilist'
 import { kitsuSearchAnime } from '../lib/kitsu'
 import { getMigratedId } from '../lib/migration'
+import { RecommendationService } from '../services/recommendation.service'
 
 interface CombinedContinueWatchingShow {
   _id: string
@@ -1071,6 +1072,12 @@ export class WatchlistController {
 
     await req.db.saveNow()
 
+    if (status === 'Completed') {
+      RecommendationService.refreshRecommendations(req.db).catch((err) => {
+        logger.warn({ err }, 'Background recommendation recalculation failed on show completion')
+      })
+    }
+
     if (name && !/^\d+$/.test(id)) {
       const resolveAndSave = async (): Promise<void> => {
         if (!isAnilistRateLimited()) {
@@ -1115,6 +1122,11 @@ export class WatchlistController {
     await performWriteTransaction(req.db, (tx) => {
       WatchlistRepository.updateStatus(tx, id, status)
     })
+    if (status === 'Completed') {
+      RecommendationService.refreshRecommendations(req.db).catch((err) => {
+        logger.warn({ err }, 'Background recommendation recalculation failed on show completion')
+      })
+    }
     res.json({ success: true })
   }
 
@@ -1131,6 +1143,12 @@ export class WatchlistController {
     await performWriteTransaction(req.db, (tx) => {
       WatchlistRepository.updateStatusMany(tx, ids, status)
     })
+
+    if (status === 'Completed') {
+      RecommendationService.refreshRecommendations(req.db).catch((err) => {
+        logger.warn({ err }, 'Background recommendation recalculation failed on show completion')
+      })
+    }
 
     req.db.scheduleSave()
     res.json({ success: true, updated: ids.length })

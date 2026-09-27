@@ -52,7 +52,7 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
   const visibleProviders =
     isAdult === undefined
       ? providers
-      : providers.filter((option) => option.mature === isAdult)
+      : providers.filter((option) => option.id === 'shoko' || option.mature === isAdult)
 
   return (
     <div className={styles.providerSelectContainer}>

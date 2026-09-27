@@ -23,6 +23,7 @@ export interface CandidateAnime extends AnimeFeatures {
 
 interface AniListRecommendationNode {
   mediaRecommendation?: AnilistMedia & {
+    isAdult?: boolean
     relations?: {
       nodes?: {
         id: number
@@ -85,19 +86,67 @@ export const CandidateFetcherService = {
           anilistId = offlineEntry.anilistId
         }
 
-        const showId = anilistId ? String(anilistId) : `shoko_${s.IDs.ID}`
+        if (!anilistId && s.IDs?.ID) {
+          const mappedRow = dbAll<{ numericId: string }>(
+            db,
+            'SELECT numericId FROM legacy_id_mapping WHERE legacyId IN (?, ?) LIMIT 1',
+            [`shoko:${s.IDs.ID}`, `shoko_${s.IDs.ID}`]
+          )[0]
+          if (mappedRow?.numericId && /^\d+$/.test(mappedRow.numericId)) {
+            anilistId = parseInt(mappedRow.numericId, 10)
+          }
+        }
+
+        if (!anilistId && (s.Name || s.AniDB?.Title)) {
+          const titleRow = dbAll<{ id: string }>(
+            db,
+            'SELECT id FROM shows_meta WHERE (name = ? OR englishName = ? OR name = ? OR englishName = ?) AND id GLOB "[0-9]*" LIMIT 1',
+            [s.Name || '', s.Name || '', s.AniDB?.Title || '', s.AniDB?.Title || '']
+          )[0]
+          if (titleRow?.id && /^\d+$/.test(titleRow.id)) {
+            anilistId = parseInt(titleRow.id, 10)
+          }
+        }
+
+        const showId = anilistId ? String(anilistId) : `shoko:${s.IDs.ID}`
 
         // Filter out shows already on watchlist or dismissed
-        if (userWatchlistIds.has(showId) || dismissedIds.has(showId)) {
+        if (
+          userWatchlistIds.has(showId) ||
+          dismissedIds.has(showId) ||
+          (s.IDs?.ID && dismissedIds.has(`shoko_${s.IDs.ID}`)) ||
+          (s.IDs?.ID && dismissedIds.has(`shoko:${s.IDs.ID}`))
+        ) {
           continue
         }
 
+        // Check if Shoko series has AniDB Restricted flag or Hentai type
+        let isRestricted = Boolean(s.AniDB?.Restricted) || s.AniDB?.Type?.toLowerCase() === 'hentai'
+        if (!isRestricted && s.IDs?.ID) {
+          const anidbInfo = await shokoClient.getSeriesAniDB(s.IDs.ID, db)
+          if (anidbInfo?.restricted || anidbInfo?.type?.toLowerCase() === 'hentai') {
+            isRestricted = true
+          }
+        }
+
         // Extract metadata (genres, themes) from DB or Shoko series
-        const metaRow = dbAll<{ genres: string; type: string }>(
+        let metaRow = dbAll<{ genres: string; type: string; isAdult: number }>(
           db,
-          'SELECT genres, type FROM shows_meta WHERE id = ?',
+          'SELECT genres, type, isAdult FROM shows_meta WHERE id = ?',
           [showId]
         )[0]
+
+        // Fallback: look up shows_meta by name or englishName if id was unmapped shoko_XXX or lacks adult flag/genres
+        if ((!metaRow || !metaRow.genres || metaRow.isAdult == null) && s.Name) {
+          const titleRow = dbAll<{ genres: string; type: string; isAdult: number }>(
+            db,
+            'SELECT genres, type, isAdult FROM shows_meta WHERE (name = ? OR englishName = ?) AND isAdult IS NOT NULL LIMIT 1',
+            [s.Name, s.Name]
+          )[0]
+          if (titleRow) {
+            metaRow = titleRow
+          }
+        }
 
         let genres: string[] = []
         if (metaRow?.genres && metaRow.genres !== '[]') {
@@ -116,6 +165,16 @@ export const CandidateFetcherService = {
           }
         }
 
+        const isAdult =
+          isRestricted ||
+          Boolean(metaRow?.isAdult) ||
+          metaRow?.type === 'ADULT' ||
+          genres.some((g) => g.toLowerCase().includes('hentai'))
+
+        if (isAdult && !genres.some((g) => g.toLowerCase().includes('hentai'))) {
+          genres.push('Hentai')
+        }
+
         // Shoko local poster
         const preferredPoster =
           s.Images?.Posters?.find((p) => p.Preferred) ||
@@ -132,11 +191,12 @@ export const CandidateFetcherService = {
           name: s.Name || offlineEntry?.title || s.AniDB?.Title || 'Unknown Local Anime',
           englishName: s.AniDB?.Title || offlineEntry?.title || s.Name,
           genres,
-          type: metaRow?.type || offlineEntry?.type || s.AniDB?.Type || 'TV',
+          type: isAdult ? 'ADULT' : (metaRow?.type || offlineEntry?.type || s.AniDB?.Type || 'TV'),
           isLocal: true,
           thumbnail,
           score: s.AniDB?.Rating?.Value ? Math.round(s.AniDB.Rating.Value * 10) : undefined,
           episodeCount: s.AniDB?.EpisodeCount,
+          isAdult,
         }
 
         candidates.push(candidate)
@@ -166,6 +226,7 @@ export const CandidateFetcherService = {
             nodes {
               mediaRecommendation {
                 id
+                isAdult
                 title { romaji english native }
                 coverImage { extraLarge large medium }
                 bannerImage
@@ -228,13 +289,18 @@ export const CandidateFetcherService = {
             id: String(r.id),
           }))
 
+          const isAdult =
+            Boolean(rec.isAdult) ||
+            genres.some((g) => g.toLowerCase().includes('hentai')) ||
+            rec.format === 'ADULT'
+
           candidatesMap.set(idStr, {
             id: idStr,
             name: rec.title?.romaji || title,
             englishName: rec.title?.english || undefined,
             genres,
             tags,
-            type: rec.format,
+            type: isAdult ? 'ADULT' : rec.format,
             isLocal: false,
             score: rec.averageScore || undefined,
             popularityScore: rec.popularity || undefined,
@@ -244,6 +310,7 @@ export const CandidateFetcherService = {
             seasonYear: rec.seasonYear || undefined,
             startDate: rec.startDate?.year ? `${rec.startDate.year}` : undefined,
             relations,
+            isAdult,
           })
         }
       } catch (err) {
@@ -275,19 +342,25 @@ export const CandidateFetcherService = {
         const genres = (show.genres || []).map((g: { name: string }) => g.name)
         const tags = (show.tags || []).map((t: { name: string }) => t.name)
 
+        const isAdult =
+          Boolean(show.isAdult) ||
+          genres.some((g: string) => g.toLowerCase().includes('hentai')) ||
+          show.type === 'ADULT'
+
         candidatesMap.set(idStr, {
           id: idStr,
           name: show.name,
           englishName: show.englishName || undefined,
           genres,
           tags,
-          type: show.type,
+          type: isAdult ? 'ADULT' : show.type,
           isLocal: false,
           score: show.score || show.averageScore || undefined,
           thumbnail: show.thumbnail,
           bannerImage: show.bannerImage,
           status: show.status,
           episodeCount: show.episodeCount != null ? Number(show.episodeCount) : undefined,
+          isAdult,
         })
       }
     } catch (err) {
