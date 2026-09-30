@@ -6,10 +6,9 @@ import {
   FaFilter,
   FaChevronDown,
   FaChevronUp,
-  FaChevronLeft,
-  FaChevronRight,
   FaGlobe,
 } from 'react-icons/fa'
+import { PaginationControls } from '../components/common/PaginationControls'
 import AnimeCard from '../components/anime/AnimeCard'
 import SkeletonGrid from '../components/common/SkeletonGrid'
 import { Button } from '../components/common/Button'
@@ -674,27 +673,14 @@ export default function Search() {
         </h2>
 
         {pagedResults.length > 0 && (
-          <div className={styles.pagination}>
-            <button
-              className={styles.pageBtn}
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page === 1 || combinedLoading}
-              aria-label="Previous page"
-            >
-              <FaChevronLeft size={14} />
-            </button>
-            <span className={styles.pageInfo}>
-              Page <strong>{page}</strong>
-            </span>
-            <button
-              className={styles.pageBtn}
-              onClick={() => handlePageChange(page + 1)}
-              disabled={!canGoNext || combinedLoading}
-              aria-label="Next page"
-            >
-              <FaChevronRight size={14} />
-            </button>
-          </div>
+          <PaginationControls
+            page={page}
+            totalPages={isLocalOnly ? totalLocalPages : undefined}
+            canGoNext={canGoNext}
+            disabled={combinedLoading}
+            onPageChange={handlePageChange}
+            scrollToRef={resultsRef}
+          />
         )}
       </div>
 
@@ -720,27 +706,14 @@ export default function Search() {
 
       {pagedResults.length > 0 && (
         <div className={styles.bottomPagination}>
-          <div className={styles.pagination}>
-            <button
-              className={styles.pageBtn}
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page === 1 || combinedLoading}
-            >
-              <FaChevronLeft size={14} />
-              <span>Previous</span>
-            </button>
-            <span className={styles.pageInfo}>
-              Page <strong>{page}</strong>
-            </span>
-            <button
-              className={styles.pageBtn}
-              onClick={() => handlePageChange(page + 1)}
-              disabled={!canGoNext || combinedLoading}
-            >
-              <span>Next</span>
-              <FaChevronRight size={14} />
-            </button>
-          </div>
+          <PaginationControls
+            page={page}
+            totalPages={isLocalOnly ? totalLocalPages : undefined}
+            canGoNext={canGoNext}
+            disabled={combinedLoading}
+            onPageChange={handlePageChange}
+            scrollToRef={resultsRef}
+          />
         </div>
       )}
       {showMatureModal && (

@@ -8,13 +8,12 @@ import {
   FaFilter,
   FaSearch,
   FaTrash,
-  FaChevronLeft,
-  FaChevronRight,
   FaCheck,
   FaCheckCircle,
   FaRegCircle,
   FaPencilAlt,
 } from 'react-icons/fa'
+import { PaginationControls } from '../components/common/PaginationControls'
 
 import AnimeCard from '../components/anime/AnimeCard'
 import SkeletonGrid from '../components/common/SkeletonGrid'
@@ -351,7 +350,8 @@ const Watchlist: React.FC = () => {
     setItemToRemove({ ids: [...selectedIds] })
   }
 
-  const canGoNext = list.length >= 14 && nextPageData && nextPageData.data.length > 0
+  const totalPages = Math.ceil(total / 14) || 1
+  const canGoNext = page < totalPages
 
   return (
     <div className="page-container">
@@ -503,27 +503,14 @@ const Watchlist: React.FC = () => {
             <span>Bulk Manage</span>
           </button>
           {total > 0 && (
-            <div className={styles.pagination}>
-              <button
-                className={styles.pageBtn}
-                onClick={() => handlePageChange(page - 1)}
-                disabled={page === 1 || isLoading}
-                aria-label="Previous page"
-              >
-                <FaChevronLeft size={14} />
-              </button>
-              <span className={styles.pageInfo}>
-                Page <strong>{page}</strong>
-              </span>
-              <button
-                className={styles.pageBtn}
-                onClick={() => handlePageChange(page + 1)}
-                disabled={!canGoNext || isLoading}
-                aria-label="Next page"
-              >
-                <FaChevronRight size={14} />
-              </button>
-            </div>
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              canGoNext={canGoNext}
+              disabled={isLoading}
+              onPageChange={handlePageChange}
+              scrollToRef={gridRef}
+            />
           )}
         </div>
       </div>
@@ -802,27 +789,14 @@ const Watchlist: React.FC = () => {
 
       {total > 0 && (
         <div className={styles.bottomPagination}>
-          <div className={styles.pagination}>
-            <button
-              className={styles.pageBtn}
-              onClick={() => handlePageChange(page - 1)}
-              disabled={page === 1 || isLoading}
-            >
-              <FaChevronLeft size={14} />
-              <span>Previous</span>
-            </button>
-            <span className={styles.pageInfo}>
-              Page <strong>{page}</strong>
-            </span>
-            <button
-              className={styles.pageBtn}
-              onClick={() => handlePageChange(page + 1)}
-              disabled={!canGoNext || isLoading}
-            >
-              <span>Next</span>
-              <FaChevronRight size={14} />
-            </button>
-          </div>
+          <PaginationControls
+            page={page}
+            totalPages={totalPages}
+            canGoNext={canGoNext}
+            disabled={isLoading}
+            onPageChange={handlePageChange}
+            scrollToRef={gridRef}
+          />
         </div>
       )}
 

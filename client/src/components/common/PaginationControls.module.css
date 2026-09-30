@@ -1,0 +1,121 @@
+.paginationControls {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  background: var(--bg-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  user-select: none;
+}
+
+.navButton {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.navButton:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+
+.navButton:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .navButton {
+    width: 38px;
+    height: 38px;
+  }
+}
+
+.pageInfoWrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.pageTrigger {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 800;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.pageTrigger:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+  color: var(--accent);
+}
+
+.pageInput {
+  width: 44px;
+  height: 28px;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-align: center;
+  padding: 0 2px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 64, 129, 0.15);
+}
+
+.separator {
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  user-select: none;
+}
+
+.totalTrigger {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 700;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.totalTrigger:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+  color: var(--accent);
+}
+
+.totalTrigger:disabled {
+  cursor: default;
+  color: var(--text-tertiary);
+}

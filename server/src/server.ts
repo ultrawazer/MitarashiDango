@@ -363,14 +363,18 @@ async function main() {
 
   // Recalculate recommendations periodically if cache is older than 7 days
   const recommendationsInterval = setInterval(() => {
-    const currentPrimary = getPrimaryDb()
-    if (currentPrimary) {
-      if (!RecommendationsRepository.isCacheFresh(currentPrimary, 'for_you', 24 * 7)) {
-        logger.info('Weekly recommendation recalculation triggered by periodic schedule...')
-        RecommendationService.refreshRecommendations(currentPrimary).catch((err) => {
-          logger.warn({ err }, 'Periodic recommendation refresh failed')
-        })
+    try {
+      const currentPrimary = getPrimaryDb()
+      if (currentPrimary && !currentPrimary.isClosedCheck()) {
+        if (!RecommendationsRepository.isCacheFresh(currentPrimary, 'for_you', 24 * 7)) {
+          logger.info('Weekly recommendation recalculation triggered by periodic schedule...')
+          RecommendationService.refreshRecommendations(currentPrimary).catch((err) => {
+            logger.warn({ err }, 'Periodic recommendation refresh failed')
+          })
+        }
       }
+    } catch (err) {
+      logger.warn({ err }, 'Periodic recommendation refresh check skipped')
     }
   }, 12 * 60 * 60 * 1000)
 

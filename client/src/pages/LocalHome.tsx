@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FaChevronLeft, FaChevronRight, FaHistory } from 'react-icons/fa'
+import { FaHistory } from 'react-icons/fa'
+import { PaginationControls } from '../components/common/PaginationControls'
 import { Button } from '../components/common/Button'
 import AnimeSection from '../components/anime/AnimeSection'
 import AnimeCard from '../components/anime/AnimeCard'
@@ -313,43 +314,12 @@ const LocalHome: React.FC<LocalHomeProps> = ({ mediaMode }) => {
                   <option value="ALL">All</option>
                 </select>
 
-                <div className={styles['pagination-controls']}>
-                  <button
-                    className={styles['nav-button']}
-                    onClick={() => {
-                      if (page > 1) {
-                        setPage((p) => p - 1)
-                        if (seasonalRef.current) {
-                          const y =
-                            seasonalRef.current.getBoundingClientRect().top + window.scrollY - 120
-                          window.scrollTo({ top: y, behavior: 'smooth' })
-                        }
-                      }
-                    }}
-                    disabled={page === 1}
-                    style={{ opacity: page === 1 ? 0.3 : 1 }}
-                    aria-label="Previous page"
-                  >
-                    <FaChevronLeft size={14} />
-                  </button>
-                  <span className={styles['page-info']}>{page}</span>
-                  <button
-                    className={styles['nav-button']}
-                    onClick={() => {
-                      setPage((p) => p + 1)
-                      if (seasonalRef.current) {
-                        const y =
-                          seasonalRef.current.getBoundingClientRect().top + window.scrollY - 120
-                        window.scrollTo({ top: y, behavior: 'smooth' })
-                      }
-                    }}
-                    disabled={!canGoNextSeason}
-                    style={{ opacity: canGoNextSeason ? 1 : 0.3 }}
-                    aria-label="Next page"
-                  >
-                    <FaChevronRight size={14} />
-                  </button>
-                </div>
+                <PaginationControls
+                  page={page}
+                  canGoNext={canGoNextSeason}
+                  onPageChange={(p) => setPage(p)}
+                  scrollToRef={seasonalRef}
+                />
               </div>
             </div>
 

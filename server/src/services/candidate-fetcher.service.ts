@@ -100,7 +100,7 @@ export const CandidateFetcherService = {
         if (!anilistId && (s.Name || s.AniDB?.Title)) {
           const titleRow = dbAll<{ id: string }>(
             db,
-            'SELECT id FROM shows_meta WHERE (name = ? OR englishName = ? OR name = ? OR englishName = ?) AND id GLOB "[0-9]*" LIMIT 1',
+            "SELECT id FROM shows_meta WHERE (name = ? OR englishName = ? OR name = ? OR englishName = ?) AND id GLOB '[0-9]*' LIMIT 1",
             [s.Name || '', s.Name || '', s.AniDB?.Title || '', s.AniDB?.Title || '']
           )[0]
           if (titleRow?.id && /^\d+$/.test(titleRow.id)) {
