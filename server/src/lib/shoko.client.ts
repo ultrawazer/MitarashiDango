@@ -555,13 +555,40 @@ export class ShokoClient {
           includeDataFrom: 'AniDB,TvDB',
           includeFiles: true,
           includeMediaInfo: true,
-          pageSize: 100,
+          pageSize: 0,
         },
       })
       const data = res.data
       let list: ShokoEpisode[] = []
       if (Array.isArray(data)) list = data
       else if (Array.isArray(data?.List)) list = data.List
+
+      const total = typeof data?.Total === 'number' ? data.Total : list.length
+      if (total > list.length && list.length > 0) {
+        let page = 2
+        const pageSize = 100
+        while (list.length < total) {
+          const nextRes = await client.get(`/api/v3/Series/${seriesId}/Episode`, {
+            params: {
+              includeDataFrom: 'AniDB,TvDB',
+              includeFiles: true,
+              includeMediaInfo: true,
+              page,
+              pageSize,
+            },
+          })
+          const nextData = nextRes.data
+          const nextList: ShokoEpisode[] = Array.isArray(nextData)
+            ? nextData
+            : Array.isArray(nextData?.List)
+              ? nextData.List
+              : []
+          if (nextList.length === 0) break
+          list.push(...nextList)
+          if (nextList.length < pageSize) break
+          page++
+        }
+      }
 
       if (list.length > 0) {
         this.seriesEpisodesCache.set(seriesId, { data: list, timestamp: Date.now() })

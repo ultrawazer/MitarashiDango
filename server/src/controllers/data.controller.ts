@@ -27,6 +27,7 @@ import logger from '../logger'
 import { getExtensionContext } from '../utils/request-context'
 import { extensionManager } from '../extensions/extension-manager'
 import { flareSolverrService } from '../services/flaresolverr.service'
+import { dbGet } from '../utils/db-utils'
 
 function parseListParam(value: unknown): string[] | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined
@@ -377,14 +378,100 @@ export class DataController {
 
     const showId = await getMigratedId(req.db, showIdRaw)
 
+    // Check media playback mode
+    let mediaMode = (req.query.mediaMode as string)?.toLowerCase()
+    if (!mediaMode) {
+      const modeSetting = await SettingsRepository.getByKey(req.db, 'media_mode')
+      mediaMode = (modeSetting?.value as string)?.toLowerCase() || 'web'
+    }
+
     const shokoProviderInstance = this.getProviderByName('shoko')
-    if ((showId.startsWith('shoko:') || showId.startsWith('shoko_')) && shokoProviderInstance) {
+    const isShokoId = showId.startsWith('shoko:') || showId.startsWith('shoko_')
+
+    if (isShokoId && shokoProviderInstance) {
+      let shokoData: any = null
       try {
-        const data = await shokoProviderInstance.getEpisodes(showId, req.query.mode as 'sub' | 'dub')
-        return res.json(data || { episodes: [] })
-      } catch {
-        return res.json({ episodes: [] })
+        shokoData = await shokoProviderInstance.getEpisodes(showId, req.query.mode as 'sub' | 'dub')
+      } catch {}
+
+      if (mediaMode === 'local' || !shokoData) {
+        return res.json(shokoData || { episodes: [] })
       }
+
+      // In mixed or web mode with a Shoko ID, attempt to resolve the AniList ID to merge online episodes
+      let anilistId: string | null = null
+      const numShokoId = parseInt(showId.replace(/^shoko[:_]/, ''), 10)
+      if (!isNaN(numShokoId)) {
+        const mappedRow = dbGet<{ numericId: string }>(
+          req.db,
+          'SELECT numericId FROM legacy_id_mapping WHERE legacyId IN (?, ?) LIMIT 1',
+          [`shoko:${numShokoId}`, `shoko_${numShokoId}`]
+        )
+        if (mappedRow?.numericId && /^\d+$/.test(mappedRow.numericId)) {
+          anilistId = mappedRow.numericId
+        }
+
+        if (!anilistId) {
+          try {
+            const series = await shokoClient.getSeriesById(numShokoId, req.db)
+            const anidbId = series?.IDs?.AniDB || series?.AniDB?.ID
+            if (anidbId) {
+              const mapped = animeIdMapper.getAnilistIdByAnidb(anidbId)
+              if (mapped) anilistId = String(mapped)
+            }
+            if (!anilistId && series?.IDs?.MAL?.[0]) {
+              const mapped = animeIdMapper.getAnilistIdByMal(series.IDs.MAL[0])
+              if (mapped) anilistId = String(mapped)
+            }
+          } catch {}
+        }
+      }
+
+      if (anilistId) {
+        let onlineEpisodes: string[] = []
+        try {
+          onlineEpisodes = await getAnilistEpisodes(anilistId)
+          if (onlineEpisodes.length === 0) {
+            onlineEpisodes = await this.tryProviderEpisodesFallback(
+              anilistId,
+              req.query.mode as 'sub' | 'dub'
+            )
+            if (onlineEpisodes.length > 0) {
+              setCachedAnilist(`eps:${anilistId}`, onlineEpisodes)
+            }
+          }
+        } catch (e) {
+          logger.error({ err: e, showId, anilistId }, 'Episodes fetch failed for resolved Shoko anime')
+        }
+
+        if (onlineEpisodes.length > 0) {
+          const localDetailMap = new Map(
+            (shokoData.availableEpisodesDetail || []).map((d: any) => [d.number, d])
+          )
+          const combinedEpisodes = Array.from(
+            new Set([...onlineEpisodes, ...(shokoData.episodes || [])])
+          )
+          combinedEpisodes.sort((a, b) => {
+            const numA = parseFloat(a)
+            const numB = parseFloat(b)
+            if (isNaN(numA) && isNaN(numB)) return a.localeCompare(b)
+            if (isNaN(numA)) return 1
+            if (isNaN(numB)) return -1
+            return numA - numB
+          })
+
+          return res.set('Cache-Control', 'public, max-age=60').json({
+            episodes: combinedEpisodes,
+            themeSongs: shokoData.themeSongs,
+            availableEpisodesDetail: combinedEpisodes.map((num) => {
+              const local = localDetailMap.get(num)
+              return local || { number: num }
+            }),
+          })
+        }
+      }
+
+      return res.json(shokoData || { episodes: [] })
     }
 
     const animepaheProvider = this.getProviderByName('animepahe')
@@ -443,13 +530,6 @@ export class DataController {
       }
     }
 
-    // Check media playback mode
-    let mediaMode = (req.query.mediaMode as string)?.toLowerCase()
-    if (!mediaMode) {
-      const modeSetting = await SettingsRepository.getByKey(req.db, 'media_mode')
-      mediaMode = (modeSetting?.value as string)?.toLowerCase() || 'web'
-    }
-
     // Check Shoko local availability
     let shokoDetails: any = null
     if (
@@ -488,8 +568,17 @@ export class DataController {
           shokoDetails.availableEpisodesDetail.map((d: any) => [d.number, d])
         )
         const combinedEpisodes = Array.from(new Set([...episodes, ...shokoDetails.episodes]))
+        combinedEpisodes.sort((a, b) => {
+          const numA = parseFloat(a)
+          const numB = parseFloat(b)
+          if (isNaN(numA) && isNaN(numB)) return a.localeCompare(b)
+          if (isNaN(numA)) return 1
+          if (isNaN(numB)) return -1
+          return numA - numB
+        })
         return res.set('Cache-Control', 'public, max-age=60').json({
           episodes: combinedEpisodes,
+          themeSongs: shokoDetails.themeSongs,
           availableEpisodesDetail: combinedEpisodes.map((num) => {
             const local = localDetailMap.get(num)
             return local || { number: num }

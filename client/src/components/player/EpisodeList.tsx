@@ -112,9 +112,34 @@ const EpisodeList = ({
     return ranges
   }, [episodes])
 
+  // Automatically select the range containing currentEpisode
+  useEffect(() => {
+    if (!currentEpisode || episodeRanges.length === 0) return
+    const epIndex = episodes.findIndex((ep) => ep === currentEpisode)
+    if (epIndex !== -1) {
+      const targetRangeIndex = Math.floor(epIndex / 100)
+      if (targetRangeIndex >= 0 && targetRangeIndex < episodeRanges.length) {
+        setSelectedRange(targetRangeIndex)
+        return
+      }
+    }
+    const epNum = parseFloat(currentEpisode)
+    if (!isNaN(epNum)) {
+      const targetRangeIndex = episodeRanges.findIndex((range) => {
+        const [start, end] = range.split('-').map(Number)
+        return epNum >= start && epNum <= end
+      })
+      if (targetRangeIndex !== -1) {
+        setSelectedRange(targetRangeIndex)
+      }
+    }
+  }, [currentEpisode, episodes, episodeRanges])
+
   const filteredEpisodes = useMemo(() => {
     if (episodeRanges.length === 0) return episodes
-    const range = episodeRanges[selectedRange]
+    const validIndex = Math.min(Math.max(0, selectedRange), episodeRanges.length - 1)
+    const range = episodeRanges[validIndex]
+    if (!range) return episodes
     const [startStr, endStr] = range.split('-')
     const start = parseInt(startStr, 10)
     const end = parseInt(endStr, 10)
