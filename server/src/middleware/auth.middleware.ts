@@ -39,7 +39,11 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     // Check if initial system setup has been completed
     const totalUsers = countUsers()
     if (totalUsers === 0) {
-      if (req.path === '/api/auth/status' || req.path === '/api/auth/setup') {
+      if (
+        !req.path.startsWith('/api/') ||
+        req.path === '/api/auth/status' ||
+        req.path === '/api/auth/setup'
+      ) {
         req.db = getSystemDb()
         next()
         return
