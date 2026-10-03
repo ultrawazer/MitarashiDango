@@ -1,11 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { FaUserCog, FaShieldAlt, FaSignOutAlt, FaUser } from 'react-icons/fa'
+import { FaUserCog, FaShieldAlt, FaSignOutAlt, FaUser, FaExclamationTriangle } from 'react-icons/fa'
 import { useAuth } from '../../contexts/AuthContext'
+import { useSystemNotifications } from '../../hooks/useAnimeData'
 import styles from './UserMenu.module.css'
 
 export const UserMenu: React.FC = () => {
   const { user, isAdmin, logout } = useAuth()
+  const { data: systemNotifications = [] } = useSystemNotifications(isAdmin)
+  const hasFlaggedAlerts = isAdmin && systemNotifications.some((sn) => sn.type === 'admin-alert')
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
@@ -52,9 +55,9 @@ export const UserMenu: React.FC = () => {
     <div className={styles.container} ref={menuRef}>
       <button
         type="button"
-        className={styles.avatarButton}
+        className={`${styles.avatarButton} ${hasFlaggedAlerts ? styles.avatarAlertButton : ''}`}
         onClick={() => setIsOpen((prev) => !prev)}
-        aria-label="User profile menu"
+        aria-label={hasFlaggedAlerts ? 'User profile menu - Security Alert Pending' : 'User profile menu'}
         aria-expanded={isOpen}
         id="user-profile-menu-button"
       >
@@ -62,6 +65,11 @@ export const UserMenu: React.FC = () => {
           <img src={user.avatarUrl} alt={user.displayName} className={styles.avatarImg} />
         ) : (
           <FaUser className={styles.userIcon} />
+        )}
+        {hasFlaggedAlerts && (
+          <span className={styles.avatarAlertDot} title="Account security alert pending">
+            <FaExclamationTriangle size={7} />
+          </span>
         )}
       </button>
 
@@ -100,7 +108,7 @@ export const UserMenu: React.FC = () => {
 
           {isAdmin && (
             <Link
-              to="/settings"
+              to="/settings?tab=users"
               className={styles.menuItem}
               onClick={handleLinkClick}
               id="menu-admin-settings-link"
@@ -109,6 +117,12 @@ export const UserMenu: React.FC = () => {
                 <FaShieldAlt />
               </span>
               <span>Admin Settings</span>
+              {hasFlaggedAlerts && (
+                <span className={styles.menuAlertBadge} title="Flagged user alert pending">
+                  <FaExclamationTriangle size={10} style={{ marginRight: 3 }} />
+                  Alert
+                </span>
+              )}
             </Link>
           )}
 

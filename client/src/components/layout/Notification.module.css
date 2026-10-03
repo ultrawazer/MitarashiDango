@@ -341,3 +341,68 @@
     font-size: 1.1rem;
   }
 }
+
+.bellBtnAlert {
+  background: rgba(245, 158, 11, 0.15) !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+}
+
+.bellBtnAlert:hover {
+  background: rgba(245, 158, 11, 0.25) !important;
+}
+
+.badgeAlert {
+  background-color: #ef4444 !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.7);
+  animation: pulseAlert 1.5s infinite;
+}
+
+@keyframes pulseAlert {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.9);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+  }
+}
+
+.adminAlertItem {
+  background: rgba(239, 68, 68, 0.08);
+  border-left: 3px solid #ef4444;
+}
+
+.alertTag {
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.actionBtn {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 4px);
+  margin-left: auto;
+  white-space: nowrap;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+}
+
+.actionBtn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}

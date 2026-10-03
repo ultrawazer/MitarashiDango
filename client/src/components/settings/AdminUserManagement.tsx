@@ -18,6 +18,7 @@ import {
 import { Button } from '../common/Button'
 import ToggleSwitch from '../common/ToggleSwitch'
 import { useAuth } from '../../contexts/AuthContext'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import styles from './AdminUserManagement.module.css'
 
@@ -129,6 +130,7 @@ const getAuthHeaders = (): Record<string, string> => {
 
 export const AdminUserManagement: React.FC = () => {
   const { user: currentUser } = useAuth()
+  const queryClient = useQueryClient()
   const [users, setUsers] = useState<ManagedUser[]>([])
   const [loading, setLoading] = useState(true)
   const [registrationEnabled, setRegistrationEnabled] = useState(false)
@@ -237,6 +239,7 @@ export const AdminUserManagement: React.FC = () => {
         toast.success(action === 'approve' ? 'User unblocked and baseline reset!' : 'Unblock request dismissed.')
         fetchUsers()
         fetchUnblockRequests()
+        queryClient.invalidateQueries({ queryKey: ['system-notifications'] })
       } else {
         toast.error(data.error || 'Failed to resolve unblock request')
       }
@@ -264,6 +267,7 @@ export const AdminUserManagement: React.FC = () => {
         toast.success(`Account @${targetUser.username} unblocked successfully!`)
         fetchUsers()
         fetchUnblockRequests()
+        queryClient.invalidateQueries({ queryKey: ['system-notifications'] })
       } else {
         toast.error(data.error || 'Failed to unblock user')
       }
@@ -510,6 +514,43 @@ export const AdminUserManagement: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Flagged Accounts Without Pending Request Banner */}
+      {users.some((u) => Boolean(u.isFlagged) && !unblockRequests.some((r) => r.userId === u.id)) && (
+        <div className={styles.unblockBannerCard} style={{ borderLeftColor: '#ef4444' }}>
+          <h3 className={styles.unblockBannerTitle} style={{ color: '#ef4444' }}>
+            <FaExclamationTriangle /> Flagged Accounts ({users.filter((u) => Boolean(u.isFlagged) && !unblockRequests.some((r) => r.userId === u.id)).length})
+          </h3>
+          <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            These accounts were automatically flagged and locked for multi-IP violations. You can directly unblock them below:
+          </p>
+          <div className={styles.unblockList}>
+            {users
+              .filter((u) => Boolean(u.isFlagged) && !unblockRequests.some((r) => r.userId === u.id))
+              .map((fu) => (
+                <div key={fu.id} className={styles.unblockItem}>
+                  <div className={styles.unblockItemInfo}>
+                    <div className={styles.unblockItemUser}>
+                      <span>{fu.displayName || fu.username}</span>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>@{fu.username}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        Flagged: {fu.flagReason || 'Multi-IP login in 7 days'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={styles.unblockItemActions}>
+                    <Button
+                      size="sm"
+                      onClick={() => handleDirectUnblock(fu)}
+                    >
+                      <FaUnlock style={{ marginRight: '0.35rem' }} /> Unblock User
+                    </Button>
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       )}

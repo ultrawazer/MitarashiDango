@@ -226,3 +226,39 @@
 .logoutBtn:hover .menuItemIcon {
   color: #ef4444;
 }
+
+.avatarAlertButton {
+  box-shadow: 0 0 0 2px #ef4444 !important;
+}
+
+.avatarAlertDot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.8);
+  border: 1.5px solid #17171a;
+  z-index: 2;
+  animation: pulseAlert 1.5s infinite;
+}
+
+.menuAlertBadge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  letter-spacing: 0.3px;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+}

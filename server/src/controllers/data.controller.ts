@@ -28,6 +28,7 @@ import { getExtensionContext } from '../utils/request-context'
 import { extensionManager } from '../extensions/extension-manager'
 import { flareSolverrService } from '../services/flaresolverr.service'
 import { dbGet } from '../utils/db-utils'
+import { listFlaggedUsers, listUnblockRequests } from '../system-db'
 
 function parseListParam(value: unknown): string[] | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined
@@ -808,16 +809,58 @@ export class DataController {
     res.json({ available, wasDownAtBoot: wasAnilistDownAtBoot() })
   }
 
-  getSystemNotifications = async (_req: Request, res: Response) => {
+  getSystemNotifications = async (req: Request, res: Response) => {
     interface SystemNotification {
       id: string
       type: string
       title: string
       message: string
       icon: string
+      actionUrl?: string
+      actionLabel?: string
       createdAt: number
     }
     const notifications: SystemNotification[] = []
+
+    // Security/Admin alerts: notify admins of flagged accounts and unblock requests
+    if (req.user?.role === 'admin') {
+      try {
+        const pendingRequests = listUnblockRequests('pending')
+        const flaggedUsers = listFlaggedUsers()
+        const userIdsWithPendingRequest = new Set(pendingRequests.map((r) => r.userId))
+
+        for (const reqItem of pendingRequests) {
+          notifications.push({
+            id: `unblock-request-${reqItem.id}`,
+            type: 'admin-alert',
+            title: 'Account Unblock Request',
+            message: `@${reqItem.username} requested to unblock their account${reqItem.note ? `: "${reqItem.note}"` : ''}`,
+            icon: 'warning',
+            actionUrl: '/settings?tab=users',
+            actionLabel: 'Review Request',
+            createdAt: new Date(reqItem.createdAt).getTime(),
+          })
+        }
+
+        for (const user of flaggedUsers) {
+          if (!userIdsWithPendingRequest.has(user.id)) {
+            notifications.push({
+              id: `flagged-user-${user.id}`,
+              type: 'admin-alert',
+              title: 'Account Flagged (Multi-IP)',
+              message: `@${user.username} was flagged for multi-IP logins${user.flagReason ? ` (${user.flagReason})` : ''}`,
+              icon: 'warning',
+              actionUrl: '/settings?tab=users',
+              actionLabel: 'Review User',
+              createdAt: user.lastLoginAt ? new Date(user.lastLoginAt).getTime() : Date.now(),
+            })
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Could not check flagged users for admin notifications')
+      }
+    }
+
     if (wasAnilistDownAtBoot() && anilistUnavailable()) {
       notifications.push({
         id: 'system-anilist-down',
@@ -839,6 +882,8 @@ export class DataController {
           title: 'Extension Updates Available',
           message: `Update${updates.length > 1 ? 's are' : ' is'} available for: ${extNames}. Update them in Settings → Extensions.`,
           icon: 'info',
+          actionUrl: '/settings?tab=extensions',
+          actionLabel: 'Update',
           createdAt: Date.now(),
         })
       }

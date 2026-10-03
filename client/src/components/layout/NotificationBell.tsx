@@ -44,6 +44,10 @@ const NotificationBell: React.FC = () => {
     wasDiscoveryRunning.current = running
   }, [discoveryStatus?.running, queryClient])
 
+  const hasAdminAlert = systemNotifications.some(
+    (sn) => sn.type === 'admin-alert' || sn.type === 'security'
+  )
+
   const handleToggle = () => {
     const nextOpen = !isOpen
     setIsOpen(nextOpen)
@@ -54,12 +58,20 @@ const NotificationBell: React.FC = () => {
 
   return (
     <div className={styles.container} ref={bellRef}>
-      <button className={styles.bellBtn} onClick={handleToggle} aria-label="Notifications">
-        <FaBell />
-        {count > 0 && <span className={styles.badge}>{displayCount}</span>}
+      <button
+        className={`${styles.bellBtn} ${hasAdminAlert ? styles.bellBtnAlert : ''}`}
+        onClick={handleToggle}
+        aria-label={hasAdminAlert ? 'Notifications - Admin Alert Pending' : 'Notifications'}
+      >
+        <FaBell style={hasAdminAlert ? { color: '#f59e0b' } : undefined} />
+        {count > 0 && (
+          <span className={`${styles.badge} ${hasAdminAlert ? styles.badgeAlert : ''}`}>
+            {displayCount}
+          </span>
+        )}
       </button>
 
-      {isOpen && <NotificationDropdown />}
+      {isOpen && <NotificationDropdown onClose={() => setIsOpen(false)} />}
     </div>
   )
 }

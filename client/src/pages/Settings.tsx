@@ -7,7 +7,7 @@ import GitHubSyncSettings from '../components/settings/GitHubSyncSettings'
 import GoogleAuthSettings from '../components/settings/GoogleAuthSettings'
 import RcloneSettings from '../components/settings/RcloneSettings'
 import SyncProviderSelector from '../components/settings/SyncProviderSelector'
-import { FaCog, FaCloud, FaDatabase, FaServer, FaPuzzlePiece, FaPalette, FaUsers } from 'react-icons/fa'
+import { FaCog, FaCloud, FaDatabase, FaServer, FaPuzzlePiece, FaPalette, FaUsers, FaExclamationTriangle } from 'react-icons/fa'
 import LocalMediaSettings from '../components/settings/LocalMediaSettings'
 import OfflineDbSettings from '../components/settings/OfflineDbSettings'
 import ExtensionsSettings from '../components/settings/ExtensionsSettings'
@@ -43,6 +43,7 @@ const Settings: React.FC = () => {
   const { lowEndMode, setLowEndMode } = useLowEndMode()
   const { data: systemNotifications = [] } = useSystemNotifications()
   const hasExtensionUpdates = systemNotifications.some((sn) => sn.id === 'system-extension-updates')
+  const flaggedAlerts = systemNotifications.filter((sn) => sn.type === 'admin-alert')
 
   useEffect(() => {
     if (!isAuthLoading && !isAdmin) {
@@ -293,6 +294,15 @@ const Settings: React.FC = () => {
             id="tab-users-btn"
           >
             <FaUsers /> <span>Users</span>
+            {flaggedAlerts.length > 0 && (
+              <span
+                className={styles.usersAlertBadge}
+                title={`${flaggedAlerts.length} flagged account alert${flaggedAlerts.length > 1 ? 's' : ''}`}
+              >
+                <FaExclamationTriangle size={10} style={{ marginRight: '3px' }} />
+                {flaggedAlerts.length}
+              </span>
+            )}
           </button>
           <button
             className={`${styles.sidebarItem} ${activeTab === 'themes' ? styles.active : ''}`}

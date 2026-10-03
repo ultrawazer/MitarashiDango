@@ -14,13 +14,17 @@ import {
   FaTv,
   FaBroadcastTower,
   FaCompass,
+  FaExclamationTriangle,
 } from 'react-icons/fa'
+import { useSystemNotifications } from '../../hooks/useAnimeData'
 import Logo from '../common/Logo'
 import packageJson from '../../../package.json'
 
 const Sidebar: React.FC = () => {
   const { isOpen, setIsOpen } = useSidebar()
   const { isAdmin } = useAuth()
+  const { data: systemNotifications = [] } = useSystemNotifications(isAdmin)
+  const hasFlaggedAlerts = isAdmin && systemNotifications.some((sn) => sn.type === 'admin-alert')
 
   const handleNavLinkClick = () => {
     setIsOpen(false)
@@ -36,7 +40,20 @@ const Sidebar: React.FC = () => {
     { to: '/asmr', icon: <FaHeadphones />, label: 'ASMR' },
     { to: '/radio', icon: <FaBroadcastTower />, label: 'Radio' },
     { to: '/tv', icon: <FaTv />, label: 'TV & Movies' },
-    ...(isAdmin ? [{ to: '/settings', icon: <FaCog />, label: 'Settings' }] : []),
+    ...(isAdmin
+      ? [
+          {
+            to: hasFlaggedAlerts ? '/settings?tab=users' : '/settings',
+            icon: <FaCog />,
+            label: 'Settings',
+            badge: hasFlaggedAlerts ? (
+              <span className={styles.navAlertBadge} title="Account security alert pending">
+                <FaExclamationTriangle size={10} />
+              </span>
+            ) : null,
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -66,6 +83,7 @@ const Sidebar: React.FC = () => {
             >
               {item.icon}
               <span>{item.label}</span>
+              {'badge' in item && item.badge}
             </NavLink>
           ))}
         </nav>

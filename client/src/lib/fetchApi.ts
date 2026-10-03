@@ -2,8 +2,14 @@ import { emitAuthRequired, type ExtensionAuthPayload } from './auth-bus'
 import { getAllExtensionHeaders, getKnownVerificationUrl } from './extension-auth'
 
 export const fetchApi = async (url: string) => {
+  const token =
+    typeof window !== 'undefined'
+      ? localStorage.getItem('dango_auth_token') || sessionStorage.getItem('dango_auth_token')
+      : null
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...getAllExtensionHeaders(),
   }
 

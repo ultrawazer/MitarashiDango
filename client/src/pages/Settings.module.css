@@ -193,3 +193,33 @@
     padding: var(--space-6);
   }
 }
+
+.usersAlertBadge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 12px;
+  line-height: 1;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  animation: pulseAlert 1.5s infinite;
+}
+
+@keyframes pulseAlert {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.9);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+  }
+}

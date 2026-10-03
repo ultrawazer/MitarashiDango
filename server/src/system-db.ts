@@ -208,6 +208,19 @@ export function listUsers(): SystemUser[] {
   ) as SystemUser[]
 }
 
+export function listFlaggedUsers(): SystemUser[] {
+  return getSystemDb().all<any>(
+    `SELECT id, username, display_name AS displayName, password_hash AS passwordHash,
+            role, avatar_path AS avatarPath, is_active AS isActive,
+            is_flagged AS isFlagged, flag_reason AS flagReason,
+            created_at AS createdAt, last_login_at AS lastLoginAt,
+            last_active_at AS lastActiveAt
+     FROM users
+     WHERE is_flagged = 1
+     ORDER BY created_at DESC`
+  ) as SystemUser[]
+}
+
 export function createUser(user: {
   id: string
   username: string

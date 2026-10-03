@@ -534,10 +534,12 @@ export interface Notification {
 
 export interface SystemNotification {
   id: string
-  type: 'system'
+  type: 'system' | 'admin-alert' | string
   title: string
   message: string
   icon: 'warning' | 'error' | 'info'
+  actionUrl?: string
+  actionLabel?: string
   createdAt: number
 }
 
