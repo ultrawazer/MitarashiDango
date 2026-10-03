@@ -12,6 +12,12 @@ import {
   deleteSessionsForUser,
   getAllGlobalSettings,
   setGlobalSetting,
+  listLoginHistoryForUser,
+  resetUserIpHistory,
+  listUnblockRequests,
+  resolveUnblockRequest,
+  getPendingUnblockRequestForUser,
+  getSystemDb,
 } from '../system-db'
 import { hashPassword } from '../app-auth'
 import { userDbManager } from '../user-db-manager'
@@ -30,8 +36,11 @@ export class AdminController {
         role: u.role,
         avatarUrl: u.avatarPath ? `/api/auth/avatar/${u.id}` : null,
         isActive: u.isActive === 1,
+        isFlagged: u.isFlagged === 1,
+        flagReason: u.flagReason,
         createdAt: u.createdAt,
         lastLoginAt: u.lastLoginAt,
+        lastActiveAt: u.lastActiveAt,
       }))
       res.json({ users, success: true })
     } catch (err) {
@@ -267,6 +276,120 @@ export class AdminController {
     } catch (err) {
       logger.error({ err }, 'Failed to update admin settings')
       res.status(500).json({ error: 'FAILED_TO_UPDATE_SETTINGS' })
+    }
+  }
+
+  getUserActivity = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const id = paramToString(req.params.id)
+      const user = getUserById(id)
+      if (!user) {
+        res.status(404).json({ error: 'User not found' })
+        return
+      }
+
+      let recentWatches: any[] = []
+      try {
+        const userDb = await userDbManager.getDb(id)
+        recentWatches = userDb.all<any>(
+          `SELECT 
+             we.showId,
+             we.episodeNumber,
+             we.watchedAt,
+             we.currentTime,
+             we.duration,
+             sm.name,
+             sm.englishName,
+             sm.thumbnail,
+             sm.episodeCount
+           FROM watched_episodes we
+           LEFT JOIN shows_meta sm ON we.showId = sm.id
+           ORDER BY datetime(we.watchedAt) DESC
+           LIMIT 10`
+        )
+      } catch (err) {
+        logger.warn({ err, userId: id }, 'Could not read user watched_episodes')
+      }
+
+      const loginHistory = listLoginHistoryForUser(id, 10)
+
+      res.json({
+        success: true,
+        userId: id,
+        username: user.username,
+        displayName: user.displayName,
+        recentWatches,
+        loginHistory,
+      })
+    } catch (err) {
+      logger.error({ err }, 'Failed to get user activity')
+      res.status(500).json({ error: 'FAILED_TO_GET_USER_ACTIVITY' })
+    }
+  }
+
+  unblockUser = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const id = paramToString(req.params.id)
+      const user = getUserById(id)
+      if (!user) {
+        res.status(404).json({ error: 'User not found' })
+        return
+      }
+
+      updateUser(id, { isFlagged: 0, flagReason: null, isActive: 1 })
+      resetUserIpHistory(id)
+
+      const pending = getPendingUnblockRequestForUser(id)
+      if (pending) {
+        resolveUnblockRequest(pending.id, 'approved', req.user?.username || 'admin')
+      }
+
+      logger.info({ userId: id, username: user.username, admin: req.user?.username }, 'User unblocked by admin')
+      res.json({ success: true, message: `Account @${user.username} unblocked successfully.` })
+    } catch (err) {
+      logger.error({ err }, 'Failed to unblock user')
+      res.status(500).json({ error: 'FAILED_TO_UNBLOCK_USER' })
+    }
+  }
+
+  getUnblockRequests = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const requests = listUnblockRequests('pending')
+      res.json({ success: true, requests })
+    } catch (err) {
+      logger.error({ err }, 'Failed to list unblock requests')
+      res.status(500).json({ error: 'FAILED_TO_LIST_UNBLOCK_REQUESTS', requests: [] })
+    }
+  }
+
+  resolveUnblockRequest = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const id = paramToString(req.params.id)
+      const { action } = req.body ?? {}
+      if (action !== 'approve' && action !== 'reject') {
+        res.status(400).json({ error: 'Invalid action. Must be approve or reject.' })
+        return
+      }
+
+      const adminUsername = req.user?.username || 'admin'
+      resolveUnblockRequest(id, action, adminUsername)
+
+      if (action === 'approve') {
+        const targetReq = getSystemDb().get<any>(
+          `SELECT user_id AS userId FROM unblock_requests WHERE id = ?`,
+          [id]
+        )
+        if (targetReq?.userId) {
+          updateUser(targetReq.userId, { isFlagged: 0, flagReason: null, isActive: 1 })
+          resetUserIpHistory(targetReq.userId)
+        }
+      }
+
+      logger.info({ requestId: id, action, admin: adminUsername }, 'Unblock request resolved')
+      res.json({ success: true, message: `Request ${action}d successfully.` })
+    } catch (err) {
+      logger.error({ err }, 'Failed to resolve unblock request')
+      res.status(500).json({ error: 'FAILED_TO_RESOLVE_UNBLOCK_REQUEST' })
     }
   }
 }

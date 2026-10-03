@@ -21,6 +21,7 @@ export function createUserAuthRouter(): Router {
   router.get('/status', controller.getStatus)
   router.post('/setup', controller.setup)
   router.post('/login', controller.login)
+  router.post('/request-unblock', controller.requestUnblock)
   router.post('/logout', controller.logout)
 
   router.get('/me', controller.getMe)

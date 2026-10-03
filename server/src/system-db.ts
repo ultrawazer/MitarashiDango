@@ -1,4 +1,5 @@
 import path from 'path'
+import crypto from 'crypto'
 import { DatabaseWrapper } from './db'
 import { CONFIG } from './config'
 import logger from './logger'
@@ -11,8 +12,32 @@ export interface SystemUser {
   role: 'admin' | 'user'
   avatarPath: string | null
   isActive: number
+  isFlagged: number
+  flagReason: string | null
   createdAt: string
   lastLoginAt: string | null
+  lastActiveAt: string | null
+}
+
+export interface LoginHistoryRecord {
+  id: string
+  userId: string
+  ipAddress: string
+  userAgent: string | null
+  status: string
+  createdAt: string
+}
+
+export interface UnblockRequestRecord {
+  id: string
+  userId: string
+  username: string
+  ipAddress: string
+  note: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: string
+  resolvedAt: string | null
+  resolvedBy: string | null
 }
 
 export interface SystemSession {
@@ -53,10 +78,29 @@ export async function initSystemDb(customPath?: string): Promise<DatabaseWrapper
       role          TEXT NOT NULL DEFAULT 'user',
       avatar_path   TEXT,
       is_active     INTEGER NOT NULL DEFAULT 1,
+      is_flagged    INTEGER NOT NULL DEFAULT 0,
+      flag_reason   TEXT,
       created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_login_at DATETIME
+      last_login_at DATETIME,
+      last_active_at DATETIME
     );
   `)
+
+  // Migrate existing users table if columns don't exist yet
+  try {
+    const userCols = db.all<{ name: string }>(`PRAGMA table_info(users);`).map((c) => c.name)
+    if (!userCols.includes('last_active_at')) {
+      db.run(`ALTER TABLE users ADD COLUMN last_active_at DATETIME;`)
+    }
+    if (!userCols.includes('is_flagged')) {
+      db.run(`ALTER TABLE users ADD COLUMN is_flagged INTEGER NOT NULL DEFAULT 0;`)
+    }
+    if (!userCols.includes('flag_reason')) {
+      db.run(`ALTER TABLE users ADD COLUMN flag_reason TEXT;`)
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Column migration check on users table skipped or completed')
+  }
 
   db.run(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -68,6 +112,33 @@ export async function initSystemDb(customPath?: string): Promise<DatabaseWrapper
       ip_address  TEXT
     );
   `)
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS login_history (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      ip_address  TEXT NOT NULL,
+      user_agent  TEXT,
+      status      TEXT NOT NULL,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(user_id, created_at);`)
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS unblock_requests (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username    TEXT NOT NULL,
+      ip_address  TEXT NOT NULL,
+      note        TEXT,
+      status      TEXT NOT NULL DEFAULT 'pending',
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      resolved_at DATETIME,
+      resolved_by TEXT
+    );
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_unblock_requests_status ON unblock_requests(status);`)
 
   db.run(`
     CREATE TABLE IF NOT EXISTS global_settings (
@@ -99,7 +170,9 @@ export function getUserById(id: string): SystemUser | null {
   const row = getSystemDb().get<any>(
     `SELECT id, username, display_name AS displayName, password_hash AS passwordHash,
             role, avatar_path AS avatarPath, is_active AS isActive,
-            created_at AS createdAt, last_login_at AS lastLoginAt
+            is_flagged AS isFlagged, flag_reason AS flagReason,
+            created_at AS createdAt, last_login_at AS lastLoginAt,
+            last_active_at AS lastActiveAt
      FROM users WHERE id = ?`,
     [id]
   )
@@ -110,7 +183,9 @@ export function getUserByUsername(username: string): SystemUser | null {
   const row = getSystemDb().get<any>(
     `SELECT id, username, display_name AS displayName, password_hash AS passwordHash,
             role, avatar_path AS avatarPath, is_active AS isActive,
-            created_at AS createdAt, last_login_at AS lastLoginAt
+            is_flagged AS isFlagged, flag_reason AS flagReason,
+            created_at AS createdAt, last_login_at AS lastLoginAt,
+            last_active_at AS lastActiveAt
      FROM users WHERE LOWER(username) = LOWER(?)`,
     [username.trim()]
   )
@@ -126,7 +201,9 @@ export function listUsers(): SystemUser[] {
   return getSystemDb().all<any>(
     `SELECT id, username, display_name AS displayName, password_hash AS passwordHash,
             role, avatar_path AS avatarPath, is_active AS isActive,
-            created_at AS createdAt, last_login_at AS lastLoginAt
+            is_flagged AS isFlagged, flag_reason AS flagReason,
+            created_at AS createdAt, last_login_at AS lastLoginAt,
+            last_active_at AS lastActiveAt
      FROM users ORDER BY created_at ASC`
   ) as SystemUser[]
 }
@@ -140,8 +217,8 @@ export function createUser(user: {
   avatarPath?: string | null
 }): void {
   getSystemDb().run(
-    `INSERT INTO users (id, username, display_name, password_hash, role, avatar_path, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, 1)`,
+    `INSERT INTO users (id, username, display_name, password_hash, role, avatar_path, is_active, is_flagged)
+     VALUES (?, ?, ?, ?, ?, ?, 1, 0)`,
     [
       user.id,
       user.username.trim().toLowerCase(),
@@ -155,7 +232,7 @@ export function createUser(user: {
 
 export function updateUser(
   id: string,
-  updates: Partial<Pick<SystemUser, 'displayName' | 'passwordHash' | 'role' | 'avatarPath' | 'isActive' | 'lastLoginAt'>>
+  updates: Partial<Pick<SystemUser, 'displayName' | 'passwordHash' | 'role' | 'avatarPath' | 'isActive' | 'isFlagged' | 'flagReason' | 'lastLoginAt' | 'lastActiveAt'>>
 ): void {
   const sets: string[] = []
   const values: any[] = []
@@ -180,15 +257,140 @@ export function updateUser(
     sets.push('is_active = ?')
     values.push(updates.isActive)
   }
+  if (updates.isFlagged !== undefined) {
+    sets.push('is_flagged = ?')
+    values.push(updates.isFlagged)
+  }
+  if (updates.flagReason !== undefined) {
+    sets.push('flag_reason = ?')
+    values.push(updates.flagReason)
+  }
   if (updates.lastLoginAt !== undefined) {
     sets.push('last_login_at = ?')
     values.push(updates.lastLoginAt)
+  }
+  if (updates.lastActiveAt !== undefined) {
+    sets.push('last_active_at = ?')
+    values.push(updates.lastActiveAt)
   }
 
   if (sets.length === 0) return
 
   values.push(id)
   getSystemDb().run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, values)
+}
+
+export function recordUserActivity(userId: string): void {
+  getSystemDb().run(`UPDATE users SET last_active_at = CURRENT_TIMESTAMP WHERE id = ?`, [userId])
+}
+
+export function recordLoginAttempt(
+  userId: string,
+  ipAddress: string,
+  userAgent?: string,
+  status: 'success' | 'flagged' | 'failed' = 'success'
+): void {
+  const id = crypto.randomUUID()
+  getSystemDb().run(
+    `INSERT INTO login_history (id, user_id, ip_address, user_agent, status)
+     VALUES (?, ?, ?, ?, ?)`,
+    [id, userId, ipAddress, userAgent ?? null, status]
+  )
+}
+
+export function getRecentLoginIps(userId: string, days: number = 7): string[] {
+  const rows = getSystemDb().all<{ ip_address: string }>(
+    `SELECT DISTINCT ip_address
+     FROM login_history
+     WHERE user_id = ?
+       AND status = 'success'
+       AND datetime(created_at) >= datetime('now', '-' || ? || ' days')`,
+    [userId, days]
+  )
+  return rows.map((r) => r.ip_address)
+}
+
+export function listLoginHistoryForUser(userId: string, limit: number = 10): LoginHistoryRecord[] {
+  return getSystemDb().all<any>(
+    `SELECT id, user_id AS userId, ip_address AS ipAddress, user_agent AS userAgent,
+            status, created_at AS createdAt
+     FROM login_history
+     WHERE user_id = ?
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [userId, limit]
+  )
+}
+
+export function resetUserIpHistory(userId: string): void {
+  getSystemDb().run(
+    `UPDATE login_history SET status = 'archived' WHERE user_id = ? AND status = 'success'`,
+    [userId]
+  )
+}
+
+export function createUnblockRequest(
+  userId: string,
+  username: string,
+  ipAddress: string,
+  note?: string
+): UnblockRequestRecord {
+  const id = crypto.randomUUID()
+  getSystemDb().run(
+    `INSERT INTO unblock_requests (id, user_id, username, ip_address, note, status)
+     VALUES (?, ?, ?, ?, ?, 'pending')`,
+    [id, userId, username, ipAddress, note ?? null]
+  )
+  return {
+    id,
+    userId,
+    username,
+    ipAddress,
+    note: note ?? null,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    resolvedAt: null,
+    resolvedBy: null,
+  }
+}
+
+export function getPendingUnblockRequestForUser(userId: string): UnblockRequestRecord | null {
+  const row = getSystemDb().get<any>(
+    `SELECT id, user_id AS userId, username, ip_address AS ipAddress,
+            note, status, created_at AS createdAt, resolved_at AS resolvedAt,
+            resolved_by AS resolvedBy
+     FROM unblock_requests
+     WHERE user_id = ? AND status = 'pending'
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId]
+  )
+  return row ?? null
+}
+
+export function listUnblockRequests(status: string = 'pending'): (UnblockRequestRecord & { displayName?: string })[] {
+  return getSystemDb().all<any>(
+    `SELECT r.id, r.user_id AS userId, r.username, r.ip_address AS ipAddress,
+            r.note, r.status, r.created_at AS createdAt, r.resolved_at AS resolvedAt,
+            r.resolved_by AS resolvedBy, u.display_name AS displayName
+     FROM unblock_requests r
+     LEFT JOIN users u ON r.user_id = u.id
+     WHERE r.status = ?
+     ORDER BY r.created_at DESC`,
+    [status]
+  )
+}
+
+export function resolveUnblockRequest(
+  requestId: string,
+  status: 'approved' | 'rejected',
+  adminUsername: string
+): void {
+  getSystemDb().run(
+    `UPDATE unblock_requests
+     SET status = ?, resolved_at = CURRENT_TIMESTAMP, resolved_by = ?
+     WHERE id = ?`,
+    [status, adminUsername, requestId]
+  )
 }
 
 export function deleteUserRecord(id: string): void {
@@ -216,12 +418,13 @@ export function getSession(token: string): (SystemSession & {
   role: 'admin' | 'user'
   avatarPath: string | null
   isActive: number
+  isFlagged: number
 }) | null {
   const row = getSystemDb().get<any>(
     `SELECT s.token, s.user_id AS userId, s.created_at AS createdAt, s.expires_at AS expiresAt,
             s.user_agent AS userAgent, s.ip_address AS ipAddress,
             u.username, u.display_name AS displayName, u.role, u.avatar_path AS avatarPath,
-            u.is_active AS isActive
+            u.is_active AS isActive, u.is_flagged AS isFlagged
      FROM sessions s
      JOIN users u ON s.user_id = u.id
      WHERE s.token = ? AND datetime(s.expires_at) > datetime('now')`,

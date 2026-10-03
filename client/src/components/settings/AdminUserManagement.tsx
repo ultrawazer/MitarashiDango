@@ -8,6 +8,12 @@ import {
   FaCheckCircle,
   FaTimesCircle,
   FaUserShield,
+  FaExclamationTriangle,
+  FaUnlock,
+  FaHistory,
+  FaTv,
+  FaNetworkWired,
+  FaTimes,
 } from 'react-icons/fa'
 import { Button } from '../common/Button'
 import ToggleSwitch from '../common/ToggleSwitch'
@@ -22,8 +28,96 @@ interface ManagedUser {
   role: 'admin' | 'user'
   avatarUrl: string | null
   isActive: number | boolean
+  isFlagged?: boolean
+  flagReason?: string | null
   createdAt: string
   lastLoginAt: string | null
+  lastActiveAt?: string | null
+}
+
+interface UnblockRequest {
+  id: string
+  userId: string
+  username: string
+  displayName?: string
+  ipAddress: string
+  note: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: string
+}
+
+interface WatchedEpisodeActivity {
+  showId: string
+  episodeNumber: string
+  watchedAt: string
+  currentTime: number
+  duration: number
+  name: string | null
+  englishName: string | null
+  thumbnail: string | null
+  episodeCount: number | null
+}
+
+interface LoginHistoryItem {
+  id: string
+  userId: string
+  ipAddress: string
+  userAgent: string | null
+  status: string
+  createdAt: string
+}
+
+interface UserActivityData {
+  userId: string
+  username: string
+  displayName: string
+  recentWatches: WatchedEpisodeActivity[]
+  loginHistory: LoginHistoryItem[]
+}
+
+function formatActivityTime(isoString?: string | null): { text: string; isOnline: boolean; fullDate: string } {
+  if (!isoString) return { text: 'Never', isOnline: false, fullDate: 'Never' }
+  const date = new Date(isoString)
+  if (isNaN(date.getTime())) return { text: 'Never', isOnline: false, fullDate: 'Never' }
+
+  const fullDate = date.toLocaleString()
+  const diffMs = Date.now() - date.getTime()
+  const diffMinutes = Math.floor(diffMs / (60 * 1000))
+
+  if (diffMinutes < 5) {
+    return { text: 'Online now', isOnline: true, fullDate }
+  }
+  if (diffMinutes < 60) {
+    return { text: `${diffMinutes}m ago`, isOnline: false, fullDate }
+  }
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) {
+    return { text: `${diffHours}h ago`, isOnline: false, fullDate }
+  }
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays === 1) {
+    return {
+      text: `Yesterday at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+      isOnline: false,
+      fullDate,
+    }
+  }
+  if (diffDays < 7) {
+    return { text: `${diffDays}d ago`, isOnline: false, fullDate }
+  }
+  return { text: date.toLocaleDateString(), isOnline: false, fullDate }
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds || isNaN(seconds) || seconds <= 0) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  if (mins >= 60) {
+    const hrs = Math.floor(mins / 60)
+    const remMins = mins % 60
+    return `${hrs}:${remMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+  return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
 const getAuthHeaders = (): Record<string, string> => {
@@ -53,6 +147,15 @@ export const AdminUserManagement: React.FC = () => {
 
   const [purgeUser, setPurgeUser] = useState<ManagedUser | null>(null)
   const [purgeLoading, setPurgeLoading] = useState(false)
+
+  // Unblock requests state
+  const [unblockRequests, setUnblockRequests] = useState<UnblockRequest[]>([])
+  const [unblockLoading, setUnblockLoading] = useState<Record<string, boolean>>({})
+
+  // Activity modal state
+  const [activityModalUser, setActivityModalUser] = useState<ManagedUser | null>(null)
+  const [activityData, setActivityData] = useState<UserActivityData | null>(null)
+  const [activityLoading, setActivityLoading] = useState(false)
 
   const fetchUsers = async () => {
     try {
@@ -98,10 +201,98 @@ export const AdminUserManagement: React.FC = () => {
     } catch {}
   }
 
+  const fetchUnblockRequests = async () => {
+    try {
+      const res = await fetch('/api/admin/unblock-requests', {
+        headers: { ...getAuthHeaders() },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setUnblockRequests(Array.isArray(data?.requests) ? data.requests : [])
+      }
+    } catch {
+      setUnblockRequests([])
+    }
+  }
+
   useEffect(() => {
     fetchUsers()
     fetchSettings()
+    fetchUnblockRequests()
   }, [])
+
+  const handleResolveUnblock = async (requestId: string, action: 'approve' | 'reject') => {
+    setUnblockLoading((prev) => ({ ...prev, [requestId]: true }))
+    try {
+      const res = await fetch(`/api/admin/unblock-requests/${requestId}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ action }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toast.success(action === 'approve' ? 'User unblocked and baseline reset!' : 'Unblock request dismissed.')
+        fetchUsers()
+        fetchUnblockRequests()
+      } else {
+        toast.error(data.error || 'Failed to resolve unblock request')
+      }
+    } catch {
+      toast.error('Network error resolving unblock request')
+    } finally {
+      setUnblockLoading((prev) => ({ ...prev, [requestId]: false }))
+    }
+  }
+
+  const handleDirectUnblock = async (targetUser: ManagedUser) => {
+    if (!window.confirm(`Are you sure you want to unblock @${targetUser.username} and reset their IP baseline?`)) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/admin/users/${targetUser.id}/unblock`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+        },
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toast.success(`Account @${targetUser.username} unblocked successfully!`)
+        fetchUsers()
+        fetchUnblockRequests()
+      } else {
+        toast.error(data.error || 'Failed to unblock user')
+      }
+    } catch {
+      toast.error('Network error unblocking user')
+    }
+  }
+
+  const handleViewActivity = async (targetUser: ManagedUser) => {
+    setActivityModalUser(targetUser)
+    setActivityData(null)
+    setActivityLoading(true)
+
+    try {
+      const res = await fetch(`/api/admin/users/${targetUser.id}/activity`, {
+        headers: { ...getAuthHeaders() },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setActivityData(data)
+      } else {
+        toast.error('Failed to load user activity')
+      }
+    } catch {
+      toast.error('Network error loading activity')
+    } finally {
+      setActivityLoading(false)
+    }
+  }
 
   const handleToggleRegistration = async (enabled: boolean) => {
     setRegistrationEnabled(enabled)
@@ -276,6 +467,53 @@ export const AdminUserManagement: React.FC = () => {
         </div>
       </div>
 
+      {/* Pending Unblock Requests Banner */}
+      {unblockRequests.length > 0 && (
+        <div className={styles.unblockBannerCard}>
+          <h3 className={styles.unblockBannerTitle}>
+            <FaExclamationTriangle /> Pending Account Unblock Requests ({unblockRequests.length})
+          </h3>
+          <div className={styles.unblockList}>
+            {unblockRequests.map((req) => (
+              <div key={req.id} className={styles.unblockItem}>
+                <div className={styles.unblockItemInfo}>
+                  <div className={styles.unblockItemUser}>
+                    <span>{req.displayName || req.username}</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>@{req.username}</span>
+                    <span className={styles.unblockItemIp}>IP: {req.ipAddress}</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {new Date(req.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {req.note && (
+                    <div className={styles.unblockItemNote}>
+                      &ldquo;{req.note}&rdquo;
+                    </div>
+                  )}
+                </div>
+                <div className={styles.unblockItemActions}>
+                  <Button
+                    size="sm"
+                    disabled={unblockLoading[req.id]}
+                    onClick={() => handleResolveUnblock(req.id, 'approve')}
+                  >
+                    <FaUnlock style={{ marginRight: '0.35rem' }} /> Approve & Unblock
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={unblockLoading[req.id]}
+                    onClick={() => handleResolveUnblock(req.id, 'reject')}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* User Accounts List */}
       <div className={styles.sectionCard}>
         <div className={styles.headerRow}>
@@ -301,7 +539,7 @@ export const AdminUserManagement: React.FC = () => {
                   <th>Role</th>
                   <th>Status</th>
                   <th>Created</th>
-                  <th>Last Login</th>
+                  <th>Last Activity</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -310,6 +548,7 @@ export const AdminUserManagement: React.FC = () => {
                   users.map((u) => {
                     const initial = (u.displayName || u.username).charAt(0).toUpperCase()
                     const isSelf = u.id === currentUser?.id
+                    const act = formatActivityTime(u.lastActiveAt || u.lastLoginAt)
                     return (
                       <tr key={u.id}>
                         <td>
@@ -339,7 +578,14 @@ export const AdminUserManagement: React.FC = () => {
                           </span>
                         </td>
                         <td>
-                          {Boolean(u.isActive) ? (
+                          {u.isFlagged ? (
+                            <span
+                              className={`${styles.statusBadge} ${styles.statusFlagged}`}
+                              title={u.flagReason || 'Account flagged for multi-IP logins in 7 days'}
+                            >
+                              <FaExclamationTriangle /> Flagged
+                            </span>
+                          ) : Boolean(u.isActive) ? (
                             <span className={`${styles.statusBadge} ${styles.statusActive}`}>
                               <FaCheckCircle /> Active
                             </span>
@@ -350,9 +596,34 @@ export const AdminUserManagement: React.FC = () => {
                           )}
                         </td>
                         <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                        <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never'}</td>
+                        <td>
+                          <span className={act.isOnline ? styles.onlineIndicator : styles.activityTime} title={act.fullDate}>
+                            {act.isOnline && <span className={styles.onlinePulseDot} />}
+                            {act.text}
+                          </span>
+                        </td>
                         <td>
                           <div className={styles.actionsCell} style={{ justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              className={styles.actionIconBtn}
+                              title="View Watch & Login Activity"
+                              onClick={() => handleViewActivity(u)}
+                            >
+                              <FaHistory />
+                            </button>
+
+                            {u.isFlagged && (
+                              <button
+                                type="button"
+                                className={`${styles.actionIconBtn} ${styles.actionIconBtnSuccess}`}
+                                title="Unblock User & Reset IP Baseline"
+                                onClick={() => handleDirectUnblock(u)}
+                              >
+                                <FaUnlock />
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               className={styles.actionIconBtn}
@@ -545,6 +816,128 @@ export const AdminUserManagement: React.FC = () => {
                 onClick={handlePurge}
               >
                 {purgeLoading ? 'Purging...' : 'Yes, Permanently Purge'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Activity Modal */}
+      {activityModalUser && (
+        <div className={styles.modalOverlay} onClick={() => setActivityModalUser(null)}>
+          <div className={styles.activityModalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 className={styles.modalTitle}>
+                <FaHistory style={{ marginRight: '0.5rem', color: 'var(--accent)' }} />
+                Activity: {activityModalUser.displayName} (@{activityModalUser.username})
+              </h3>
+              <button
+                type="button"
+                className={styles.actionIconBtn}
+                onClick={() => setActivityModalUser(null)}
+                title="Close"
+              >
+                <FaTimes />
+              </button>
+            </div>
+
+            {activityLoading ? (
+              <p style={{ color: 'var(--text-secondary)' }}>Loading user activity history...</p>
+            ) : (
+              <>
+                {/* Section 1: Recently Watched Anime */}
+                <div className={styles.activitySection}>
+                  <h4 className={styles.activitySectionHeader}>
+                    <FaTv style={{ color: 'var(--accent)' }} /> Recently Watched Anime
+                  </h4>
+
+                  {activityData?.recentWatches && activityData.recentWatches.length > 0 ? (
+                    <div className={styles.watchesList}>
+                      {activityData.recentWatches.map((w, idx) => {
+                        const progress =
+                          w.duration > 0
+                            ? Math.min(100, Math.round((w.currentTime / w.duration) * 100))
+                            : 0
+                        return (
+                          <div key={`${w.showId}-${w.episodeNumber}-${idx}`} className={styles.watchCard}>
+                            {w.thumbnail ? (
+                              <img src={w.thumbnail} alt={w.name || 'Poster'} className={styles.watchThumbnail} />
+                            ) : (
+                              <div className={styles.watchThumbnail} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <FaTv style={{ color: 'var(--text-muted)' }} />
+                              </div>
+                            )}
+                            <div className={styles.watchInfo}>
+                              <span className={styles.watchTitle}>
+                                {w.englishName || w.name || `Show #${w.showId}`}
+                              </span>
+                              <div className={styles.watchMeta}>
+                                <span className={styles.episodeBadge}>Ep {w.episodeNumber}</span>
+                                <span>{new Date(w.watchedAt).toLocaleString()}</span>
+                                {w.duration > 0 && (
+                                  <span>
+                                    {formatDuration(w.currentTime)} / {formatDuration(w.duration)} ({progress}%)
+                                  </span>
+                                )}
+                              </div>
+                              {w.duration > 0 && (
+                                <div className={styles.progressBarContainer}>
+                                  <div
+                                    className={styles.progressBarFill}
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                      No watch history recorded for this user yet.
+                    </p>
+                  )}
+                </div>
+
+                {/* Section 2: Recent Login History */}
+                <div className={styles.activitySection}>
+                  <h4 className={styles.activitySectionHeader}>
+                    <FaNetworkWired style={{ color: 'var(--accent)' }} /> Recent Login Locations & IPs
+                  </h4>
+
+                  {activityData?.loginHistory && activityData.loginHistory.length > 0 ? (
+                    <div className={styles.loginHistoryList}>
+                      {activityData.loginHistory.map((item) => (
+                        <div key={item.id} className={styles.loginHistoryRow}>
+                          <span className={styles.loginIp}>{item.ipAddress}</span>
+                          <span className={styles.loginTime}>
+                            {new Date(item.createdAt).toLocaleString()}
+                          </span>
+                          <span
+                            className={
+                              item.status === 'success'
+                                ? styles.loginStatusSuccess
+                                : styles.loginStatusFlagged
+                            }
+                          >
+                            {item.status.toUpperCase()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                      No login attempts recorded yet.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+
+            <div className={styles.modalButtons}>
+              <Button type="button" variant="secondary" onClick={() => setActivityModalUser(null)}>
+                Close
               </Button>
             </div>
           </div>

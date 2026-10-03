@@ -15,6 +15,11 @@ export function createAdminRouter(): Router {
   router.post('/users/:id/reset-password', controller.resetPassword)
   router.delete('/users/:id', controller.deleteUser)
   router.delete('/users/:id/purge', controller.purgeUser)
+  router.get('/users/:id/activity', controller.getUserActivity)
+  router.post('/users/:id/unblock', controller.unblockUser)
+
+  router.get('/unblock-requests', controller.getUnblockRequests)
+  router.post('/unblock-requests/:id/resolve', controller.resolveUnblockRequest)
 
   router.get('/sessions', controller.getSessions)
   router.delete('/sessions/:token', controller.revokeSession)

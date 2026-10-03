@@ -89,7 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       username: string,
       password: string,
       rememberMe: boolean = true
-    ): Promise<{ success: boolean; error?: string }> => {
+    ): Promise<{ success: boolean; error?: string; canRequestUnblock?: boolean; errorCode?: string }> => {
       try {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
@@ -104,7 +104,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           return { success: true }
         }
-        return { success: false, error: data.error || 'Invalid credentials' }
+        return {
+          success: false,
+          error: data.message || data.error || 'Invalid credentials',
+          canRequestUnblock: data.canRequestUnblock === true,
+          errorCode: data.error,
+        }
       } catch {
         return { success: false, error: 'Network error during login' }
       }

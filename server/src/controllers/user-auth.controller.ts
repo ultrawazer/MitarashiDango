@@ -11,12 +11,17 @@ import {
   getGlobalSetting,
   deleteSession,
   getSystemDb,
+  getRecentLoginIps,
+  recordLoginAttempt,
+  createUnblockRequest,
+  getPendingUnblockRequestForUser,
 } from '../system-db'
 import {
   hashPassword,
   verifyPassword,
   createNewSession,
   revokeSession,
+  revokeAllUserSessions,
   buildSessionCookie,
   clearSessionCookie,
   getRequestToken,
@@ -27,6 +32,27 @@ import logger from '../logger'
 
 const paramToString = (param: string | string[] | undefined): string =>
   Array.isArray(param) ? param[0] : param || ''
+
+export function extractClientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for']
+  let rawIp = ''
+  if (typeof forwarded === 'string' && forwarded.length > 0) {
+    rawIp = forwarded.split(',')[0].trim()
+  } else if (Array.isArray(forwarded) && forwarded.length > 0) {
+    rawIp = forwarded[0].trim()
+  } else if (req.ip) {
+    rawIp = req.ip
+  } else if (req.socket?.remoteAddress) {
+    rawIp = req.socket.remoteAddress
+  }
+  if (rawIp.startsWith('::ffff:')) {
+    rawIp = rawIp.slice(7)
+  }
+  if (rawIp === '::1') {
+    rawIp = '127.0.0.1'
+  }
+  return rawIp || 'unknown'
+}
 
 export class UserAuthController {
   getStatus = async (_req: Request, res: Response): Promise<void> => {
@@ -124,12 +150,54 @@ export class UserAuthController {
         return
       }
 
+      if (user.isFlagged === 1) {
+        res.status(403).json({
+          error: 'ACCOUNT_FLAGGED_MULTI_IP',
+          message: 'Your account has been flagged due to multi-IP login. Please submit an unblock request.',
+          canRequestUnblock: true,
+          flagReason: user.flagReason || 'MULTI_IP_LOGIN',
+        })
+        return
+      }
+
       const valid = verifyPassword(password, user.passwordHash)
       if (!valid) {
         res.status(401).json({ error: 'Invalid username or password' })
         return
       }
 
+      const clientIp = extractClientIp(req)
+      const userAgent = (req.headers['user-agent'] as string) || undefined
+
+      // Multi-IP enforcement (skip for admins)
+      if (user.role !== 'admin') {
+        const recentIps = getRecentLoginIps(user.id, 7)
+        if (recentIps.length > 0 && !recentIps.includes(clientIp)) {
+          // 2nd distinct IP detected in 7 days -> Flag the account!
+          const reason = `Logged in from multiple IPs in 7 days (${recentIps[0]} -> ${clientIp})`
+          updateUser(user.id, {
+            isFlagged: 1,
+            flagReason: reason,
+          })
+          revokeAllUserSessions(user.id)
+          recordLoginAttempt(user.id, clientIp, userAgent, 'flagged')
+
+          logger.warn({ userId: user.id, username: user.username, recentIps, clientIp }, 'User flagged for multi-IP login')
+
+          res.status(403).json({
+            error: 'ACCOUNT_FLAGGED_MULTI_IP',
+            message: 'Your account has been flagged due to logins from multiple locations in the past 7 days. You can submit an unblock request to the administrator.',
+            canRequestUnblock: true,
+            flagReason: reason,
+            previousIp: recentIps[0],
+            currentIp: clientIp,
+          })
+          return
+        }
+      }
+
+      // Valid login: record success attempt and update lastLoginAt
+      recordLoginAttempt(user.id, clientIp, userAgent, 'success')
       updateUser(user.id, { lastLoginAt: new Date().toISOString() })
 
       if (user.role === 'admin') {
@@ -141,10 +209,8 @@ export class UserAuthController {
         }
       }
 
-      const userAgent = req.headers['user-agent']
-      const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress
       const isRemember = rememberMe === true || rememberMe === 'true'
-      const { token, expiresAt } = createNewSession(user.id, userAgent, ip, isRemember)
+      const { token, expiresAt } = createNewSession(user.id, userAgent, clientIp, isRemember)
 
       res.setHeader('Set-Cookie', buildSessionCookie(token, expiresAt))
       res.json({
@@ -161,6 +227,58 @@ export class UserAuthController {
     } catch (err) {
       logger.error({ err }, 'Login error')
       res.status(500).json({ error: 'LOGIN_FAILED' })
+    }
+  }
+
+  requestUnblock = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { username, password, note } = req.body ?? {}
+      if (!username || typeof username !== 'string') {
+        res.status(400).json({ error: 'Username is required' })
+        return
+      }
+
+      const user = getUserByUsername(username.trim())
+      if (!user) {
+        res.status(404).json({ error: 'User not found' })
+        return
+      }
+
+      if (user.isFlagged !== 1) {
+        res.status(400).json({ error: 'This account is not flagged' })
+        return
+      }
+
+      if (!password || !verifyPassword(password, user.passwordHash)) {
+        res.status(401).json({ error: 'Invalid password. Password is required to verify account ownership.' })
+        return
+      }
+
+      const existingRequest = getPendingUnblockRequestForUser(user.id)
+      if (existingRequest) {
+        res.json({
+          success: true,
+          message: 'An unblock request is already pending review with the administrator.',
+          pending: true,
+        })
+        return
+      }
+
+      const clientIp = extractClientIp(req)
+      createUnblockRequest(
+        user.id,
+        user.username,
+        clientIp,
+        typeof note === 'string' ? note.trim().slice(0, 500) : undefined
+      )
+
+      res.json({
+        success: true,
+        message: 'Unblock request submitted successfully. The administrator will review your account.',
+      })
+    } catch (err) {
+      logger.error({ err }, 'Failed to submit unblock request')
+      res.status(500).json({ error: 'FAILED_TO_SUBMIT_UNBLOCK_REQUEST' })
     }
   }
 

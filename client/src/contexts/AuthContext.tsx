@@ -16,7 +16,11 @@ export interface AuthContextType {
   isLoading: boolean
   hasLegacyData: boolean
   registrationEnabled: boolean
-  login: (username: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>
+  login: (
+    username: string,
+    password: string,
+    rememberMe?: boolean
+  ) => Promise<{ success: boolean; error?: string; canRequestUnblock?: boolean; errorCode?: string }>
   setup: (username: string, displayName: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>

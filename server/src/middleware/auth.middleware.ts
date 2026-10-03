@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import { getRequestToken, getSessionFromToken } from '../app-auth'
-import { countUsers, getSystemDb } from '../system-db'
+import { countUsers, getSystemDb, recordUserActivity } from '../system-db'
 import { userDbManager } from '../user-db-manager'
 import logger from '../logger'
 
@@ -20,6 +20,7 @@ const PUBLIC_EXACT_PATHS = new Set([
   '/api/auth/status',
   '/api/auth/setup',
   '/api/auth/login',
+  '/api/auth/request-unblock',
   '/api/auth/google/callback',
   '/api/health',
   '/api/internal/shutdown',
@@ -30,6 +31,22 @@ function isPublicRoute(reqPath: string): boolean {
   if (PUBLIC_EXACT_PATHS.has(reqPath)) return true
   if (reqPath.startsWith('/api/auth/avatar/')) return true
   return false
+}
+
+const lastActiveCache = new Map<string, number>()
+const ACTIVITY_UPDATE_INTERVAL_MS = 2 * 60 * 1000 // 2 minutes
+
+function trackUserActivity(userId: string): void {
+  const now = Date.now()
+  const lastUpdate = lastActiveCache.get(userId) || 0
+  if (now - lastUpdate > ACTIVITY_UPDATE_INTERVAL_MS) {
+    lastActiveCache.set(userId, now)
+    try {
+      recordUserActivity(userId)
+    } catch (err) {
+      logger.warn({ err, userId }, 'Failed to record user activity')
+    }
+  }
 }
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -78,6 +95,14 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       res.status(403).json({ error: 'ACCOUNT_DISABLED' })
       return
     }
+
+    if (session.isFlagged === 1) {
+      res.status(403).json({ error: 'ACCOUNT_FLAGGED_MULTI_IP', canRequestUnblock: true })
+      return
+    }
+
+    // Debounced page activity tracking
+    trackUserActivity(session.userId)
 
     req.user = {
       id: session.userId,
