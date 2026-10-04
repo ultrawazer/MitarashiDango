@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { FaInfoCircle, FaTimes, FaHdd, FaPlay } from 'react-icons/fa'
+import { FaInfoCircle, FaTimes, FaHdd, FaPlay, FaShareAlt } from 'react-icons/fa'
 import type { RecommendationItem } from '../../types/recommendations'
 import { useTitlePreference } from '../../contexts/TitlePreferenceContext'
+import { RecommendToFriendModal } from '../modals/RecommendToFriendModal'
 import styles from './RecommendationCard.module.css'
 
 interface RecommendationCardProps {
@@ -18,6 +19,7 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
 }) => {
   const navigate = useNavigate()
   const { titlePreference } = useTitlePreference()
+  const [isRecommendOpen, setIsRecommendOpen] = useState(false)
 
   const title =
     (titlePreference === 'englishName' && item.englishName) ||
@@ -39,6 +41,12 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
     e.stopPropagation()
     e.preventDefault()
     navigate(`/watch/${item.showId}/1`)
+  }
+
+  const handleShareClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    setIsRecommendOpen(true)
   }
 
   const handleInfoClick = (e: React.MouseEvent) => {
@@ -105,6 +113,15 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
           <button
             type="button"
             className={styles.actionButton}
+            onClick={handleShareClick}
+            title="Recommend to a friend"
+            aria-label="Recommend to a friend"
+          >
+            <FaShareAlt size={12} />
+          </button>
+          <button
+            type="button"
+            className={styles.actionButton}
             onClick={handleInfoClick}
             title="View Score Breakdown"
             aria-label="View Score Breakdown"
@@ -147,6 +164,19 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
           </div>
         )}
       </div>
+
+      <RecommendToFriendModal
+        isOpen={isRecommendOpen}
+        onClose={() => setIsRecommendOpen(false)}
+        anime={{
+          id: item.showId,
+          name: item.name || item.englishName || 'Anime',
+          englishName: item.englishName,
+          nativeName: item.nativeName,
+          thumbnail: item.thumbnail,
+          type: item.type,
+        }}
+      />
     </div>
   )
 }

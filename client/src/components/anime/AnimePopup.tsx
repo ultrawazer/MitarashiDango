@@ -1,11 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFloating, flip, shift, autoUpdate } from '@floating-ui/react'
-import { FaStar, FaPlay, FaTv, FaPlus, FaCheck } from 'react-icons/fa'
+import { FaStar, FaPlay, FaTv, FaPlus, FaCheck, FaShareAlt } from 'react-icons/fa'
 import { Link } from 'react-router'
 import { useAnimeInfoData } from '../../hooks/useAnimeInfoData'
 import { useTitlePreference } from '../../contexts/TitlePreferenceContext'
 import QueueOptionsButton from './QueueOptionsButton'
+import { RecommendToFriendModal } from '../modals/RecommendToFriendModal'
 import styles from './AnimePopup.module.css'
 
 interface AnimePopupProps {
@@ -50,6 +51,7 @@ const AnimePopup: React.FC<AnimePopupProps> = ({
   })
 
   const [queueMenuOpen, setQueueMenuOpen] = useState(false)
+  const [isRecommendModalOpen, setIsRecommendModalOpen] = useState(false)
   const mouseInsideRef = useRef(false)
 
   React.useEffect(() => {
@@ -179,6 +181,19 @@ const AnimePopup: React.FC<AnimePopupProps> = ({
                     align="left"
                     onMenuOpenChange={handleQueueMenuOpenChange}
                   />
+                  <button
+                    type="button"
+                    className={styles.watchlistBtn}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setIsRecommendModalOpen(true)
+                    }}
+                    title="Recommend to a friend"
+                  >
+                    <FaShareAlt size={11} />
+                    <span>Recommend</span>
+                  </button>
                   <Link to={`/anime/${showMeta?.id || showId}`} className={styles.detailsBtn}>
                     Read more
                   </Link>
@@ -190,6 +205,20 @@ const AnimePopup: React.FC<AnimePopupProps> = ({
           )}
         </div>
       </div>
+      {showMeta && (
+        <RecommendToFriendModal
+          isOpen={isRecommendModalOpen}
+          onClose={() => setIsRecommendModalOpen(false)}
+          anime={{
+            id: showMeta.id || showId,
+            name: showMeta.name || showMeta.names?.romaji || 'Anime',
+            englishName: showMeta.names?.english,
+            nativeName: showMeta.names?.native,
+            thumbnail: showMeta.thumbnail,
+            type: showMeta.type,
+          }}
+        />
+      )}
     </>
   )
 

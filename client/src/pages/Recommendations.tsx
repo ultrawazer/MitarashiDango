@@ -16,8 +16,10 @@ import {
   useDismissRecommendation,
   type RecommendationItem,
 } from '../hooks/useRecommendations'
+import { useFriendRecommendationsFeed } from '../hooks/usePeerRecommendations'
 import { useSetting } from '../hooks/useSettings'
 import { RecommendationCard } from '../components/anime/RecommendationCard'
+import { FriendRecommendationsSection } from '../components/anime/FriendRecommendationsSection'
 import { ScoreBreakdownModal } from '../components/modals/ScoreBreakdownModal'
 import { Button } from '../components/common/Button'
 import styles from './Recommendations.module.css'
@@ -52,6 +54,7 @@ const Recommendations: React.FC = () => {
 
   const { data: forYouData = [], isLoading: loadingForYou } = useRecommendations(60)
   const { data: localData = [], isLoading: loadingLocal } = useLocalLibraryRecommendations(60)
+  const { data: friendRecs = [], isLoading: loadingFriendRecs } = useFriendRecommendationsFeed()
   const { data: recMatureSetting } = useSetting('recommendations_include_mature')
   const includeMature = recMatureSetting === 'true' || recMatureSetting === true
 
@@ -196,6 +199,9 @@ const Recommendations: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Friend Recommendations Carousel */}
+      <FriendRecommendationsSection items={friendRecs} loading={loadingFriendRecs} />
 
       {/* Filter and Control Bar */}
       <div className={styles.filterBar}>

@@ -161,6 +161,27 @@ export async function initSystemDb(customPath?: string): Promise<DatabaseWrapper
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);`)
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS peer_recommendations (
+      id                 TEXT PRIMARY KEY,
+      sender_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      show_id            TEXT NOT NULL,
+      show_title         TEXT NOT NULL,
+      show_title_english TEXT,
+      show_title_native  TEXT,
+      show_thumbnail     TEXT,
+      show_type          TEXT,
+      note               TEXT,
+      status             TEXT NOT NULL DEFAULT 'unread',
+      created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+      read_at            DATETIME,
+      dismissed_at       DATETIME
+    );
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_peer_rec_recipient_status ON peer_recommendations(recipient_id, status);`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_peer_rec_recipient_show ON peer_recommendations(recipient_id, show_id);`)
+
   systemDbInstance = db
   return db
 }
@@ -503,6 +524,162 @@ export function getAllGlobalSettings(): Record<string, string> {
     result[r.key] = r.value
   }
   return result
+}
+
+// Peer Recommendations Types & Helpers
+export interface PeerRecommendationRecord {
+  id: string
+  senderId: string
+  recipientId: string
+  showId: string
+  showTitle: string
+  showTitleEnglish: string | null
+  showTitleNative: string | null
+  showThumbnail: string | null
+  showType: string | null
+  note: string | null
+  status: 'unread' | 'read' | 'dismissed'
+  createdAt: string
+  readAt: string | null
+  dismissedAt: string | null
+}
+
+export interface PeerRecommendationWithSender extends PeerRecommendationRecord {
+  senderUsername: string
+  senderDisplayName: string
+  senderAvatarPath: string | null
+}
+
+export function createPeerRecommendation(rec: {
+  id: string
+  senderId: string
+  recipientId: string
+  showId: string
+  showTitle: string
+  showTitleEnglish?: string | null
+  showTitleNative?: string | null
+  showThumbnail?: string | null
+  showType?: string | null
+  note?: string | null
+}): void {
+  getSystemDb().run(
+    `INSERT INTO peer_recommendations (
+      id, sender_id, recipient_id, show_id, show_title,
+      show_title_english, show_title_native, show_thumbnail, show_type,
+      note, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unread')`,
+    [
+      rec.id,
+      rec.senderId,
+      rec.recipientId,
+      rec.showId,
+      rec.showTitle,
+      rec.showTitleEnglish || null,
+      rec.showTitleNative || null,
+      rec.showThumbnail || null,
+      rec.showType || null,
+      rec.note ? rec.note.trim() : null,
+    ]
+  )
+}
+
+export function getPendingPeerRecommendation(
+  senderId: string,
+  recipientId: string,
+  showId: string
+): PeerRecommendationRecord | null {
+  const row = getSystemDb().get<any>(
+    `SELECT id, sender_id AS senderId, recipient_id AS recipientId,
+            show_id AS showId, show_title AS showTitle,
+            show_title_english AS showTitleEnglish, show_title_native AS showTitleNative,
+            show_thumbnail AS showThumbnail, show_type AS showType,
+            note, status, created_at AS createdAt, read_at AS readAt,
+            dismissed_at AS dismissedAt
+     FROM peer_recommendations
+     WHERE sender_id = ? AND recipient_id = ? AND show_id = ? AND status IN ('unread', 'read')`,
+    [senderId, recipientId, showId]
+  )
+  return row ? (row as PeerRecommendationRecord) : null
+}
+
+export function getPeerRecommendationsForRecipient(recipientId: string): PeerRecommendationWithSender[] {
+  const rows = getSystemDb().all<any>(
+    `SELECT pr.id, pr.sender_id AS senderId, pr.recipient_id AS recipientId,
+            pr.show_id AS showId, pr.show_title AS showTitle,
+            pr.show_title_english AS showTitleEnglish, pr.show_title_native AS showTitleNative,
+            pr.show_thumbnail AS showThumbnail, pr.show_type AS showType,
+            pr.note, pr.status, pr.created_at AS createdAt, pr.read_at AS readAt,
+            pr.dismissed_at AS dismissedAt,
+            u.username AS senderUsername, u.display_name AS senderDisplayName,
+            u.avatar_path AS senderAvatarPath
+     FROM peer_recommendations pr
+     JOIN users u ON pr.sender_id = u.id
+     WHERE pr.recipient_id = ? AND pr.status != 'dismissed'
+     ORDER BY pr.created_at DESC`,
+    [recipientId]
+  )
+  return rows as PeerRecommendationWithSender[]
+}
+
+export function getUnreadPeerNotifications(recipientId: string): PeerRecommendationWithSender[] {
+  const rows = getSystemDb().all<any>(
+    `SELECT pr.id, pr.sender_id AS senderId, pr.recipient_id AS recipientId,
+            pr.show_id AS showId, pr.show_title AS showTitle,
+            pr.show_title_english AS showTitleEnglish, pr.show_title_native AS showTitleNative,
+            pr.show_thumbnail AS showThumbnail, pr.show_type AS showType,
+            pr.note, pr.status, pr.created_at AS createdAt, pr.read_at AS readAt,
+            pr.dismissed_at AS dismissedAt,
+            u.username AS senderUsername, u.display_name AS senderDisplayName,
+            u.avatar_path AS senderAvatarPath
+     FROM peer_recommendations pr
+     JOIN users u ON pr.sender_id = u.id
+     WHERE pr.recipient_id = ? AND pr.status = 'unread'
+     ORDER BY pr.created_at DESC`,
+    [recipientId]
+  )
+  return rows as PeerRecommendationWithSender[]
+}
+
+export function markPeerRecommendationAsRead(id: string, recipientId: string): void {
+  getSystemDb().run(
+    `UPDATE peer_recommendations
+     SET status = 'read', read_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND recipient_id = ? AND status = 'unread'`,
+    [id, recipientId]
+  )
+}
+
+export function dismissPeerRecommendationsForShow(showId: string, recipientId: string): void {
+  getSystemDb().run(
+    `UPDATE peer_recommendations
+     SET status = 'dismissed', dismissed_at = CURRENT_TIMESTAMP
+     WHERE show_id = ? AND recipient_id = ?`,
+    [showId, recipientId]
+  )
+}
+
+export function dismissPeerRecommendation(id: string, recipientId: string): void {
+  getSystemDb().run(
+    `UPDATE peer_recommendations
+     SET status = 'dismissed', dismissed_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND recipient_id = ?`,
+    [id, recipientId]
+  )
+}
+
+export function listEligibleRecipients(currentUserId: string): {
+  id: string
+  username: string
+  displayName: string
+  avatarPath: string | null
+}[] {
+  return getSystemDb().all<any>(
+    `SELECT id, username, display_name AS displayName, avatar_path AS avatarPath
+     FROM users
+     WHERE id != ? AND is_active = 1 AND is_flagged = 0
+     ORDER BY display_name COLLATE NOCASE ASC`,
+    [currentUserId]
+  )
 }
 
 export function closeSystemDb(): void {

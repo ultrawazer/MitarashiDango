@@ -47,6 +47,7 @@ import { createTranslateRouter } from './routes/translate.routes'
 import { createTrackerRouter } from './routes/tracker.routes'
 import { createFlareSolverrRouter } from './routes/flaresolverr.routes'
 import { createRecommendationsRouter } from './routes/recommendations.routes'
+import { createPeerRecommendationsRouter } from './routes/peer-recommendations.routes'
 import { RecommendationsRepository } from './repositories/recommendations.repository'
 import { RecommendationService } from './services/recommendation.service'
 import { flareSolverrService } from './services/flaresolverr.service'
@@ -195,6 +196,7 @@ app.use('/api', createTrackerRouter())
 app.use('/api', createLocalMediaRouter())
 app.use('/api', createFlareSolverrRouter())
 app.use('/api', createRecommendationsRouter())
+app.use('/api/peer-recommendations', createPeerRecommendationsRouter())
 app.use(
   '/api',
   createSettingsRouter(

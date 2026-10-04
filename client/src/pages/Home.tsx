@@ -32,6 +32,8 @@ import {
   useDismissRecommendation,
 } from '../hooks/useRecommendations'
 import { RecommendationSection } from '../components/anime/RecommendationSection'
+import { useFriendRecommendationsFeed } from '../hooks/usePeerRecommendations'
+import { FriendRecommendationsSection } from '../components/anime/FriendRecommendationsSection'
 import LocalHome from './LocalHome'
 import styles from './Home.module.css'
 
@@ -67,6 +69,7 @@ const Home: React.FC = () => {
   const reorderQueue = useReorderQueue()
 
   const { data: recommendations = [], isLoading: loadingRecommendations } = useRecommendations()
+  const { data: friendRecommendations = [], isLoading: loadingFriendRecs } = useFriendRecommendationsFeed()
   const refreshRecommendationsMutation = useRefreshRecommendations()
   const dismissRecommendationMutation = useDismissRecommendation()
 
@@ -327,6 +330,12 @@ const Home: React.FC = () => {
             </Button>
           </div>
         }
+      />
+
+      {/* ── Friend Recommendations ── */}
+      <FriendRecommendationsSection
+        items={friendRecommendations}
+        loading={loadingFriendRecs}
       />
 
       {/* ── Recommendations ── */}

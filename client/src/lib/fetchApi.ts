@@ -1,7 +1,7 @@
 import { emitAuthRequired, type ExtensionAuthPayload } from './auth-bus'
 import { getAllExtensionHeaders, getKnownVerificationUrl } from './extension-auth'
 
-export const fetchApi = async (url: string) => {
+export const fetchApi = async <T = any>(url: string, init?: RequestInit): Promise<T> => {
   const token =
     typeof window !== 'undefined'
       ? localStorage.getItem('dango_auth_token') || sessionStorage.getItem('dango_auth_token')
@@ -11,9 +11,13 @@ export const fetchApi = async (url: string) => {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...getAllExtensionHeaders(),
+    ...((init?.headers as Record<string, string>) || {}),
   }
 
-  const response = await fetch(url, { headers })
+  const response = await fetch(url, {
+    ...init,
+    headers,
+  })
 
   if (!response.ok) {
     const text = await response.text().catch(() => '')
@@ -24,7 +28,12 @@ export const fetchApi = async (url: string) => {
       /* ignore parse errors */
     }
 
-    const errorMsg = typeof data.error === 'string' ? data.error : ''
+    const errorMsg =
+      typeof data.message === 'string'
+        ? data.message
+        : typeof data.error === 'string'
+          ? data.error
+          : ''
 
     if (response.status === 403 && errorMsg === 'AUTH_REQUIRED') {
       if (data.solvingInBackground === true) {

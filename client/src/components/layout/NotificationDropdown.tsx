@@ -19,6 +19,8 @@ import {
   useClearAllNotifications,
   useSystemNotifications,
 } from '../../hooks/useAnimeData'
+import { usePeerNotifications } from '../../hooks/usePeerRecommendations'
+import { PeerNotificationItem } from './PeerNotificationItem'
 import { useQueryClient } from '@tanstack/react-query'
 import styles from './Notification.module.css'
 
@@ -29,6 +31,7 @@ interface NotificationDropdownProps {
 const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) => {
   const { data: notifications = [], isLoading } = useNotifications()
   const { data: systemNotifications = [] } = useSystemNotifications()
+  const { data: peerNotifications = [] } = usePeerNotifications()
   const { data: status } = useDiscoveryStatus()
   const clearAllMutation = useClearAllNotifications()
   const queryClient = useQueryClient()
@@ -36,6 +39,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) 
 
   useEffect(() => {
     queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    queryClient.invalidateQueries({ queryKey: ['peer-recommendations', 'notifications'] })
   }, [queryClient])
 
   const handleClearAll = () => {
@@ -175,17 +179,30 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onClose }) 
                 </div>
               )
             })}
-            {systemNotifications.length > 0 && notifications.length > 0 && (
+            {systemNotifications.length > 0 && (notifications.length > 0 || peerNotifications.length > 0) && (
               <div className={styles.notificationDivider} />
             )}
-            {notifications.length > 0
-              ? notifications.map((notification) => (
-                  <NotificationItem key={notification.id} notification={notification} />
-                ))
-              : !isLoading &&
-                systemNotifications.length === 0 && (
-                  <div className={styles.emptyState}>No new notifications</div>
-                )}
+            {peerNotifications.length > 0 &&
+              peerNotifications.map((peerNotif) => (
+                <PeerNotificationItem
+                  key={peerNotif.id}
+                  notification={peerNotif}
+                  onClose={onClose}
+                />
+              ))}
+            {peerNotifications.length > 0 && notifications.length > 0 && (
+              <div className={styles.notificationDivider} />
+            )}
+            {notifications.length > 0 &&
+              notifications.map((notification) => (
+                <NotificationItem key={notification.id} notification={notification} />
+              ))}
+            {!isLoading &&
+              systemNotifications.length === 0 &&
+              peerNotifications.length === 0 &&
+              notifications.length === 0 && (
+                <div className={styles.emptyState}>No new notifications</div>
+              )}
           </>
         )}
       </div>

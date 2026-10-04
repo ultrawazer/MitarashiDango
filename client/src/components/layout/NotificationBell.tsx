@@ -8,6 +8,7 @@ import {
   useTriggerDiscovery,
   useSystemNotifications,
 } from '../../hooks/useAnimeData'
+import { usePeerNotifications } from '../../hooks/usePeerRecommendations'
 import styles from './Notification.module.css'
 
 const NotificationBell: React.FC = () => {
@@ -18,8 +19,9 @@ const NotificationBell: React.FC = () => {
 
   const { data: notifications = [] } = useNotifications()
   const { data: systemNotifications = [] } = useSystemNotifications()
+  const { data: peerNotifications = [] } = usePeerNotifications()
   const { data: discoveryStatus } = useDiscoveryStatus()
-  const count = notifications.length + systemNotifications.length
+  const count = notifications.length + systemNotifications.length + peerNotifications.length
 
   const displayCount = count > 5 ? '5+' : count
 

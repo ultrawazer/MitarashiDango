@@ -11,6 +11,7 @@ import {
   FaTv,
   FaLayerGroup,
   FaMusic,
+  FaShareAlt,
 } from 'react-icons/fa'
 import { useState, useMemo, useEffect } from 'react'
 import { useAnimeInfoData } from '../../hooks/useAnimeInfoData'
@@ -20,6 +21,7 @@ import GenericModal from '../common/GenericModal'
 import { Button } from '../common/Button'
 import { useMatureConsent } from '../../hooks/useMatureConsent'
 import { fetchApi } from '../../lib/fetchApi'
+import { RecommendToFriendModal } from '../modals/RecommendToFriendModal'
 import styles from './AnimeInfo.module.css'
 import AnimeMetaDetails from './AnimeMetaDetails'
 import SynopsisText from './SynopsisText'
@@ -30,6 +32,7 @@ export default function AnimeInfo() {
   const navigate = useNavigate()
   const { titlePreference } = useTitlePreference()
   const [showDetails, setShowDetails] = useState(false)
+  const [isRecommendModalOpen, setIsRecommendModalOpen] = useState(false)
 
   const { showMeta, loadingMeta, toggleWatchlist, inWatchlist } = useAnimeInfoData(showId)
   const { hasConsent: hasMatureConsent, grant: grantMatureConsent } = useMatureConsent()
@@ -193,6 +196,15 @@ export default function AnimeInfo() {
                 className={styles.watchlistBtn}
                 activeClassName={styles.active}
               />
+              <button
+                type="button"
+                className={styles.watchlistBtn}
+                onClick={() => setIsRecommendModalOpen(true)}
+                title="Recommend to a friend"
+              >
+                <FaShareAlt size={14} />
+                Recommend
+              </button>
             </div>
           </div>
         </div>
@@ -436,6 +448,21 @@ export default function AnimeInfo() {
             </div>
           </div>
         </GenericModal>
+      )}
+
+      {showMeta && (
+        <RecommendToFriendModal
+          isOpen={isRecommendModalOpen}
+          onClose={() => setIsRecommendModalOpen(false)}
+          anime={{
+            id: showMeta.id || showId || '',
+            name: showMeta.name || showMeta.names?.romaji || 'Anime',
+            englishName: showMeta.names?.english,
+            nativeName: showMeta.names?.native,
+            thumbnail: showMeta.thumbnail,
+            type: showMeta.type,
+          }}
+        />
       )}
     </div>
   )
